@@ -1,5 +1,12 @@
 * { box-sizing: border-box; }
 body { margin: 0; font-size: 14px; line-height: 1.35; font-family: system-ui, sans-serif; background: #f3f4f6; color: #111827; }
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; overflow: hidden; }
+body > header { flex: none; }
+body > main { flex: 1 1 auto; min-height: 0; width: 100%; overflow-y: auto; }
+body > main.fixed-head { display: flex; flex-direction: column; overflow: hidden; }
+.fixed-head > .row { flex: none; border-bottom: 1px solid #d1d5db; }
+.fixed-head > .scroll-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .topbar { display: flex; justify-content: space-between; align-items: center; padding: .3rem .75rem; background: #1f2937; color: #fff; }
 .card { max-width: 56rem; margin: .5rem auto; padding: .5rem; background: #fff; border-radius: .5rem; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 .card.narrow { max-width: 24rem; }

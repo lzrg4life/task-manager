@@ -11,11 +11,12 @@
     <span id="main-nav"><strong>Task Manager</strong> · <a href="/tickets.html">Tickets</a> · <a href="/archived.html">Archived</a> · <a href="/removed.html">Removed</a></span>
     <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
   </header>
-  <main class="card wide">
+  <main class="card wide fixed-head">
     <div class="row">
       <h1 id="heading">New ticket</h1>
       <span><button type="submit" form="ticket-form">Save</button> <a href="/tickets.html">Back to tickets</a></span>
     </div>
+    <div class="scroll-body">
     <p id="error" class="error" role="alert" hidden></p>
     <form id="ticket-form">
       <p><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></p>
@@ -46,6 +47,7 @@
       <h2>History</h2>
       <table><thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody id="history"></tbody></table>
     </section>
+    </div>
   </main>
   <script type="module" src="/js/ticket.js"></script>
 </body>
