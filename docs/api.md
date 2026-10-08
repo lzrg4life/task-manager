@@ -16,3 +16,17 @@ All bodies are JSON; errors are `{"error": "message"}`. Protected routes need `A
 | POST `/api/roles` `{name,description?}` | admin | Create role (name `[a-z0-9_-]{1,32}`) |
 
 Passwords: 10-128 characters. Unknown `/api/*` paths return JSON 404.
+
+## Tickets
+All endpoints require any signed-in user. Statuses: `archived, completed, in_review, active, up_next, backlog, removed`. Priorities: `normal, high, low`. Ticket key is `TM-<id>`.
+
+| Endpoint | Description |
+|---|---|
+| GET `/api/tickets` | Board: array of `{status, tickets[]}` in order completed, in_review, active, up_next, backlog; tickets ordered by id; archived/removed excluded |
+| GET `/api/tickets/archived?page=&per_page=` | Paginated `{items,page,per_page,total}` (default 25/page, max 100) |
+| GET `/api/tickets/removed?page=&per_page=` | Same for removed tickets |
+| POST `/api/tickets` `{title,details?,business_requirements?,technical_requirements?,implementation_notes?,status?,priority?,reviewer_id?,implementer_id?}` | Create (201); defaults backlog/normal; 400 on invalid title or inactive/unknown assignee |
+| GET `/api/tickets/{id}` | Full ticket with creator, assignees and status/priority `history` |
+| PATCH `/api/tickets/{id}` (any create field; `reviewer_id`/`implementer_id` accept `null` to clear) | Update; status/priority changes are recorded in history; 409 for any non-status change while archived |
+| POST `/api/tickets/{id}/move` `{direction: "up"\|"down"}` | Move to adjacent board list; 400 at the ends or if not on the board |
+| GET `/api/users/assignable` | Active users (`id,email,display_name`) for assignee pickers |

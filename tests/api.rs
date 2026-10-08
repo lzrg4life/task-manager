@@ -376,3 +376,200 @@ async fn static_files_and_api_404() {
     assert_eq!(s, StatusCode::NOT_FOUND);
     assert!(body["error"].is_string());
 }
+
+#[tokio::test]
+async fn tickets_lifecycle() {
+    let app = setup().await;
+    let t = admin_token(&app).await;
+
+    let (s, _) = call(&app, "GET", "/api/tickets", None, None).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+
+    let (s, a) = call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&t),
+        Some(json!({"title": "A"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(a["key"], "TM-1");
+    assert_eq!(a["status"], "backlog");
+    assert_eq!(a["priority"], "normal");
+    assert_eq!(a["history"].as_array().unwrap().len(), 2);
+    let (_, b) = call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&t),
+        Some(json!({"title": "B", "status": "active"})),
+    )
+    .await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&t),
+        Some(json!({"title": "  "})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&t),
+        Some(json!({"title": "X", "reviewer_id": 999})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    let (_, board) = call(&app, "GET", "/api/tickets", Some(&t), None).await;
+    let order: Vec<_> = board
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["status"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        order,
+        ["completed", "in_review", "active", "up_next", "backlog"]
+    );
+    assert_eq!(board[2]["tickets"][0]["key"], "TM-2");
+    assert_eq!(board[4]["tickets"][0]["key"], "TM-1");
+
+    // move up through the lists, then limits
+    let uri = "/api/tickets/1/move";
+    for expected in ["up_next", "active", "in_review", "completed"] {
+        let (s, r) = call(
+            &app,
+            "POST",
+            uri,
+            Some(&t),
+            Some(json!({"direction": "up"})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(r["status"], expected);
+    }
+    let (s, _) = call(
+        &app,
+        "POST",
+        uri,
+        Some(&t),
+        Some(json!({"direction": "up"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    let (s, r) = call(
+        &app,
+        "POST",
+        uri,
+        Some(&t),
+        Some(json!({"direction": "down"})),
+    )
+    .await;
+    assert_eq!(
+        (s, r["status"].as_str().unwrap()),
+        (StatusCode::OK, "in_review")
+    );
+
+    // edit, assign, history
+    let (s, r) = call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&t),
+        Some(json!({"priority": "high", "reviewer_id": 1, "details": "d"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(r["reviewer"]["id"], 1);
+    assert_eq!(r["history"].as_array().unwrap().len(), 3);
+    let (_, r) = call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&t),
+        Some(json!({"reviewer_id": null})),
+    )
+    .await;
+    assert!(r["reviewer"].is_null());
+    assert_eq!(b["id"], 2);
+
+    // archived: read-only except status; paged views
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&t),
+        Some(json!({"status": "archived"})),
+    )
+    .await;
+    let (s, _) = call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&t),
+        Some(json!({"title": "no"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/tickets/2/move",
+        Some(&t),
+        Some(json!({"direction": "up"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/1",
+        Some(&t),
+        Some(json!({"status": "removed"})),
+    )
+    .await;
+    let (_, board) = call(&app, "GET", "/api/tickets", Some(&t), None).await;
+    assert!(
+        board
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["tickets"].as_array().unwrap().is_empty())
+    );
+    let (_, p) = call(
+        &app,
+        "GET",
+        "/api/tickets/archived?per_page=1",
+        Some(&t),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (p["total"].as_i64(), p["items"][0]["key"].as_str()),
+        (Some(1), Some("TM-2"))
+    );
+    let (_, p) = call(&app, "GET", "/api/tickets/removed?page=2", Some(&t), None).await;
+    assert!(p["items"].as_array().unwrap().is_empty());
+    let (s, r) = call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&t),
+        Some(json!({"status": "backlog"})),
+    )
+    .await;
+    assert_eq!(
+        (s, r["status"].as_str().unwrap()),
+        (StatusCode::OK, "backlog")
+    );
+
+    let (s, u) = call(&app, "GET", "/api/users/assignable", Some(&t), None).await;
+    assert_eq!((s, u.as_array().unwrap().len()), (StatusCode::OK, 1));
+    let (s, _) = call(&app, "GET", "/api/tickets/99", Some(&t), None).await;
+    assert_eq!(s, StatusCode::NOT_FOUND);
+}

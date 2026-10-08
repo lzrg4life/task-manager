@@ -12,3 +12,6 @@
 
 ## Client token storage
 Access token in `sessionStorage`, refresh token in `localStorage` (readable by JS, so XSS is the main risk; client avoids `innerHTML`). Multiple tabs refreshing simultaneously can trip reuse detection and force a re-login; a known tradeoff.
+
+## Tickets
+`src/routes/tickets.rs` holds the handlers. Pages: `tickets.html` (board), `ticket.html` (create/view/edit), `archived.html` and `removed.html` (paginated). Archived tickets are read-only except for the status control, which restores them.

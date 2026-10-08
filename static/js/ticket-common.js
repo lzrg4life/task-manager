@@ -1,0 +1,59 @@
+import { api, logout } from "./api.js";
+
+export const STATUS_LABELS = {
+  archived: "Archived", completed: "Completed", in_review: "In Review", active: "Active",
+  up_next: "Up Next", backlog: "Backlog", removed: "Removed",
+};
+export const PRIORITY_LABELS = { normal: "Normal", high: "High", low: "Low" };
+
+export async function initPage() {
+  const me = await api("/api/me");
+  if (!me) throw new Error("not signed in");
+  document.getElementById("whoami").textContent = me.email;
+  document.getElementById("logout").addEventListener("click", logout);
+  return me;
+}
+
+export function show(msg) {
+  const el = document.getElementById("error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
+export function userName(u) { return u ? u.name : ""; }
+
+export function td(text, className) {
+  const el = document.createElement("td");
+  el.textContent = text;
+  if (className) el.className = className;
+  return el;
+}
+
+export function ticketRow(t, extra) {
+  const tr = document.createElement("tr");
+  const link = document.createElement("a");
+  link.href = `/ticket.html?id=${t.id}`;
+  link.textContent = t.key;
+  const idCell = document.createElement("td");
+  idCell.append(link);
+  tr.append(idCell, td(t.title), td(PRIORITY_LABELS[t.priority]),
+    td(userName(t.reviewer)), td(userName(t.implementer)));
+  if (extra) tr.append(extra);
+  return tr;
+}
+
+export function ticketTable(rows, extraHeader) {
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const h of ["ID", "Title", "Priority", "Reviewer", "Implementer", ...(extraHeader ? [""] : [])]) {
+    const th = document.createElement("th");
+    th.textContent = h;
+    hr.append(th);
+  }
+  head.append(hr);
+  const body = document.createElement("tbody");
+  body.append(...rows);
+  table.append(head, body);
+  return table;
+}

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tickets – Task Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <span><strong>Task Manager</strong> · <a href="/tickets.html">Tickets</a> · <a href="/archived.html">Archived</a> · <a href="/removed.html">Removed</a></span>
+    <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
+  </header>
+  <main class="card wide">
+    <div class="row"><h1>Tickets</h1><a class="button" href="/ticket.html">New ticket</a></div>
+    <p id="error" class="error" role="alert" hidden></p>
+    <div id="board"></div>
+  </main>
+  <script type="module" src="/js/tickets.js"></script>
+</body>
+</html>

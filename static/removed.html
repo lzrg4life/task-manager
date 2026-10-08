@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Removed tickets – Task Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <span><strong>Task Manager</strong> · <a href="/tickets.html">Tickets</a> · <a href="/archived.html">Archived</a> · <a href="/removed.html">Removed</a></span>
+    <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
+  </header>
+  <main class="card wide">
+    <h1>Removed tickets</h1>
+    <p id="error" class="error" role="alert" hidden></p>
+    <div id="list" data-kind="removed"></div>
+  </main>
+  <script type="module" src="/js/ticket-pages.js"></script>
+</body>
+</html>

@@ -4,6 +4,10 @@ const status = document.getElementById("status");
 const me = await api("/api/me");
 if (me) {
   status.textContent = `Signed in as ${me.email} (${me.roles.join(", ")}). `;
+  const tickets = document.createElement("a");
+  tickets.href = "/tickets.html";
+  tickets.textContent = "Tickets";
+  status.append(tickets, " ");
   if (me.roles.includes("admin")) {
     const link = document.createElement("a");
     link.href = "/users.html";

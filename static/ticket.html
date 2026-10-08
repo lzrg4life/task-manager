@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ticket – Task Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <span><strong>Task Manager</strong> · <a href="/tickets.html">Tickets</a> · <a href="/archived.html">Archived</a> · <a href="/removed.html">Removed</a></span>
+    <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
+  </header>
+  <main class="card wide">
+    <div class="row"><h1 id="heading">New ticket</h1><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></div>
+    <p id="error" class="error" role="alert" hidden></p>
+    <form id="ticket-form">
+      <label>Title <input type="text" name="title" maxlength="200" required></label>
+      <div class="grid">
+        <label>Status <select name="status"></select></label>
+        <label>Priority <select name="priority"></select></label>
+        <label>Reviewer <select name="reviewer_id"></select></label>
+        <label>Implementer <select name="implementer_id"></select></label>
+      </div>
+      <label>Details <textarea name="details" rows="4"></textarea></label>
+      <label>Business requirements <textarea name="business_requirements" rows="4"></textarea></label>
+      <label>Technical requirements <textarea name="technical_requirements" rows="4"></textarea></label>
+      <label>Implementation notes <textarea name="implementation_notes" rows="4"></textarea></label>
+      <p id="meta"></p>
+      <button type="submit">Save</button> <a href="/tickets.html">Back to tickets</a>
+    </form>
+    <section id="history-section" hidden>
+      <h2>History</h2>
+      <table><thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody id="history"></tbody></table>
+    </section>
+  </main>
+  <script type="module" src="/js/ticket.js"></script>
+</body>
+</html>
