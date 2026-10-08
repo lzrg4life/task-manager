@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Users – Task Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <strong>Task Manager</strong>
+    <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
+  </header>
+  <main class="card">
+    <div class="row">
+      <h1>Users</h1>
+      <button id="add-user">Add user</button>
+    </div>
+    <p id="error" class="error" role="alert" hidden></p>
+    <table>
+      <thead><tr><th>Email</th><th>Name</th><th>Roles</th><th>Active</th><th></th></tr></thead>
+      <tbody id="user-rows"></tbody>
+    </table>
+  </main>
+
+  <dialog id="user-dialog">
+    <form id="user-form" method="dialog">
+      <h2 id="dialog-title">Add user</h2>
+      <label>Email <input type="email" name="email" required></label>
+      <label>Display name <input type="text" name="display_name"></label>
+      <label><span id="password-label">Password</span> <input type="password" name="password" autocomplete="new-password" minlength="10"></label>
+      <fieldset>
+        <legend>Roles</legend>
+        <div id="role-boxes"></div>
+        <div class="row"><input type="text" id="new-role" placeholder="new role name"> <button type="button" id="add-role" class="secondary">Add role</button></div>
+      </fieldset>
+      <label id="active-row" class="inline"><input type="checkbox" name="is_active" checked> Active</label>
+      <p id="dialog-error" class="error" role="alert" hidden></p>
+      <div class="row">
+        <button type="button" id="cancel" class="secondary">Cancel</button>
+        <button type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <script type="module" src="/js/users.js"></script>
+</body>
+</html>
