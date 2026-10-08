@@ -12,9 +12,15 @@
     <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
   </header>
   <main class="card wide">
-    <div class="row"><h1>Tickets</h1><a class="button" href="/ticket.html">New ticket</a></div>
+    <div class="row">
+      <h1>Tickets</h1>
+      <div class="ticket-toolbar">
+        <button type="button" id="toggle-filters" class="secondary" aria-expanded="false" aria-controls="ticket-filters">Show filters</button>
+        <a class="button" href="/ticket.html">New ticket</a>
+      </div>
+    </div>
     <p id="error" class="error" role="alert" hidden></p>
-    <div class="grid">
+    <div id="ticket-filters" class="grid" hidden>
       <label for="ticket-search">Filter by ticket ID or title
         <input id="ticket-search" type="text" autocomplete="off" placeholder="e.g. TM-12 or Update login page">
       </label>

@@ -29,6 +29,8 @@ fieldset { margin: 0 0 .4rem; }
 a.button { padding: .2rem .6rem; border-radius: .25rem; background: #2563eb; color: #fff; text-decoration: none; }
 textarea, select { display: block; width: 100%; padding: .2rem .35rem; margin-top: .1rem; border: 1px solid #d1d5db; border-radius: .25rem; font: inherit; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0 1rem; }
+.grid[hidden] { display: none; }
+.ticket-toolbar { display: flex; align-items: center; gap: .5rem; }
 .pager { display: flex; gap: .5rem; align-items: center; margin-top: .4rem; }
 td.actions { white-space: nowrap; text-align: right; }
 button.small { padding: .05rem .4rem; }

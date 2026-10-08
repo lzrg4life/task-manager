@@ -5,6 +5,8 @@ await initPage();
 const board = document.getElementById("board");
 const ticketSearch = document.getElementById("ticket-search");
 const ticketAssignee = document.getElementById("ticket-assignee");
+const ticketFilters = document.getElementById("ticket-filters");
+const filterToggle = document.getElementById("toggle-filters");
 const archiveDialog = document.getElementById("archive-dialog");
 const archiveMessage = document.getElementById("archive-message");
 const archiveError = document.getElementById("archive-error");
@@ -65,6 +67,11 @@ document.getElementById("archive-cancel").addEventListener("click", () => {
 archiveConfirm.addEventListener("click", archiveTicket);
 ticketSearch.addEventListener("input", renderBoard);
 ticketAssignee.addEventListener("change", renderBoard);
+filterToggle.addEventListener("click", () => {
+  ticketFilters.hidden = !ticketFilters.hidden;
+  filterToggle.setAttribute("aria-expanded", String(!ticketFilters.hidden));
+  filterToggle.textContent = ticketFilters.hidden ? "Show filters" : "Hide filters";
+});
 
 function renderBoard() {
   const search = ticketSearch.value.trim().toLocaleLowerCase();
