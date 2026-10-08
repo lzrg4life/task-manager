@@ -12,9 +12,13 @@
     <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
   </header>
   <main class="card wide">
-    <div class="row"><h1 id="heading">New ticket</h1><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></div>
+    <div class="row">
+      <h1 id="heading">New ticket</h1>
+      <span><button type="submit" form="ticket-form">Save</button> <a href="/tickets.html">Back to tickets</a></span>
+    </div>
     <p id="error" class="error" role="alert" hidden></p>
     <form id="ticket-form">
+      <p><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></p>
       <label>Title <input type="text" name="title" maxlength="200" required></label>
       <div class="grid">
         <label>Status <select name="status"></select></label>
@@ -27,7 +31,6 @@
       <label>Technical requirements <textarea name="technical_requirements" rows="4"></textarea></label>
       <label>Implementation notes <textarea name="implementation_notes" rows="4"></textarea></label>
       <p id="meta"></p>
-      <button type="submit">Save</button> <a href="/tickets.html">Back to tickets</a>
     </form>
     <section id="links-section" class="list" hidden>
       <h2>Links</h2>

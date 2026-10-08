@@ -13,6 +13,7 @@ table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
 th, td { text-align: left; padding: .2rem .4rem; border-bottom: 1px solid #e5e7eb; }
 .error { color: #b91c1c; }
 .badge { display: inline-block; padding: 0 .4rem; margin-right: .25rem; background: #e5e7eb; border-radius: .25rem; font-size: .8rem; }
+.badge[hidden] { display: none; }
 dialog { border: 0; border-radius: .5rem; padding: .75rem; width: min(28rem, 92vw); }
 dialog::backdrop { background: rgba(0,0,0,.4); }
 fieldset { margin: 0 0 .4rem; }
