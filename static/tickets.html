@@ -16,6 +16,15 @@
     <p id="error" class="error" role="alert" hidden></p>
     <div id="board"></div>
   </main>
+  <dialog id="archive-dialog" aria-labelledby="archive-title">
+    <h2 id="archive-title">Archive ticket?</h2>
+    <p id="archive-message"></p>
+    <p id="archive-error" class="error" role="alert" hidden></p>
+    <div class="row">
+      <button type="button" id="archive-cancel" class="secondary">Cancel</button>
+      <button type="button" id="archive-confirm">Archive ticket</button>
+    </div>
+  </dialog>
   <script type="module" src="/js/tickets.js"></script>
 </body>
 </html>
