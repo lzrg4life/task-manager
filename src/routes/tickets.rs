@@ -109,9 +109,18 @@ pub struct TicketSummary {
 pub struct HistoryEntry {
     field: String,
     old_value: Option<String>,
-    new_value: String,
+    new_value: Option<String>,
     changed_by: UserRef,
     changed_at: String,
+}
+
+#[derive(Serialize)]
+pub struct LinkOut {
+    id: i64,
+    url: String,
+    label: String,
+    added_by: UserRef,
+    created_at: String,
 }
 
 #[derive(Serialize)]
@@ -125,6 +134,7 @@ pub struct TicketOut {
     created_by: UserRef,
     created_at: String,
     updated_at: String,
+    links: Vec<LinkOut>,
     history: Vec<HistoryEntry>,
 }
 
@@ -155,11 +165,22 @@ struct TicketRow {
 struct HistoryRow {
     field: String,
     old_value: Option<String>,
-    new_value: String,
+    new_value: Option<String>,
     changed_by: i64,
     u_email: String,
     u_name: String,
     changed_at: String,
+}
+
+#[derive(FromRow)]
+struct LinkRow {
+    id: i64,
+    url: String,
+    label: String,
+    created_by: i64,
+    u_email: String,
+    u_name: String,
+    created_at: String,
 }
 
 const SELECT_TICKET: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
@@ -226,6 +247,23 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
         changed_at: h.changed_at,
     })
     .collect();
+    let links = sqlx::query_as::<_, LinkRow>(
+        "SELECT l.id, l.url, l.label, l.created_by, u.email AS u_email, \
+         u.display_name AS u_name, l.created_at FROM ticket_links l \
+         JOIN users u ON u.id = l.created_by WHERE l.ticket_id = ? ORDER BY l.id",
+    )
+    .bind(id)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|l| LinkOut {
+        id: l.id,
+        url: l.url,
+        label: l.label,
+        added_by: user_ref(l.created_by, l.u_email, l.u_name),
+        created_at: l.created_at,
+    })
+    .collect();
     Ok(TicketOut {
         summary: summary_of(&r)?,
         details: r.details,
@@ -235,6 +273,7 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
         created_by: user_ref(r.created_by, r.cb_email, r.cb_name),
         created_at: r.created_at,
         updated_at: r.updated_at,
+        links,
         history,
     })
 }
@@ -408,12 +447,12 @@ async fn check_assignee(pool: &SqlitePool, id: Option<i64>) -> AppResult<()> {
     Ok(())
 }
 
-async fn record_history(
+async fn record_history<'a>(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     ticket_id: i64,
     field: &str,
     old: Option<&str>,
-    new: &str,
+    new: impl Into<Option<&'a str>>,
     user_id: i64,
 ) -> AppResult<()> {
     sqlx::query(
@@ -423,7 +462,7 @@ async fn record_history(
     .bind(ticket_id)
     .bind(field)
     .bind(old)
-    .bind(new)
+    .bind(new.into())
     .bind(user_id)
     .execute(&mut **tx)
     .await?;
@@ -649,4 +688,128 @@ pub async fn assignable_users(
         .fetch_all(&state.pool)
         .await?,
     ))
+}
+
+const MAX_URL: usize = 2000;
+const MAX_LABEL: usize = 200;
+const MAX_LINKS: i64 = 50;
+
+fn validate_url(url: &str) -> AppResult<()> {
+    let bad = || AppError::BadRequest("url must be a valid http or https address".into());
+    if url.chars().count() > MAX_URL {
+        return Err(AppError::BadRequest(format!(
+            "url must be at most {MAX_URL} characters"
+        )));
+    }
+    if url.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(bad());
+    }
+    let lower = url.to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"))
+        .ok_or_else(bad)?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or("");
+    if host.is_empty() || host.starts_with(':') {
+        return Err(bad());
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct NewLink {
+    url: String,
+    #[serde(default)]
+    label: String,
+}
+
+async fn ensure_editable(pool: &SqlitePool, id: i64) -> AppResult<()> {
+    if Status::parse(&fetch_row(pool, id).await?.status)? == Status::Archived {
+        return Err(AppError::Conflict(
+            "archived tickets are read-only; change the status to restore it first".into(),
+        ));
+    }
+    Ok(())
+}
+
+pub async fn add_link(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(req): Json<NewLink>,
+) -> AppResult<(StatusCode, Json<TicketOut>)> {
+    let url = req.url.trim();
+    let label = req.label.trim();
+    validate_url(url)?;
+    if label.chars().count() > MAX_LABEL {
+        return Err(AppError::BadRequest(format!(
+            "label must be at most {MAX_LABEL} characters"
+        )));
+    }
+    ensure_editable(&state.pool, id).await?;
+
+    let mut tx = state.pool.begin().await?;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ticket_links WHERE ticket_id = ?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if count >= MAX_LINKS {
+        return Err(AppError::BadRequest(format!(
+            "a ticket can have at most {MAX_LINKS} links"
+        )));
+    }
+    let inserted = sqlx::query(
+        "INSERT INTO ticket_links (ticket_id, url, label, created_by) VALUES (?, ?, ?, ?) \
+         ON CONFLICT(ticket_id, url) DO NOTHING",
+    )
+    .bind(id)
+    .bind(url)
+    .bind(label)
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if inserted == 0 {
+        return Err(AppError::Conflict(
+            "this url is already linked to the ticket".into(),
+        ));
+    }
+    record_history(&mut tx, id, "link_added", None, url, user.id).await?;
+    touch(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(fetch_ticket(&state.pool, id).await?),
+    ))
+}
+
+pub async fn remove_link(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path((id, link_id)): Path<(i64, i64)>,
+) -> AppResult<Json<TicketOut>> {
+    ensure_editable(&state.pool, id).await?;
+    let mut tx = state.pool.begin().await?;
+    let url: String =
+        sqlx::query_scalar("DELETE FROM ticket_links WHERE id = ? AND ticket_id = ? RETURNING url")
+            .bind(link_id)
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(AppError::NotFound)?;
+    record_history(&mut tx, id, "link_removed", Some(&url), None, user.id).await?;
+    touch(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(Json(fetch_ticket(&state.pool, id).await?))
+}
+
+async fn touch(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE tickets SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }

@@ -30,3 +30,8 @@ All endpoints require any signed-in user. Statuses: `archived, completed, in_rev
 | PATCH `/api/tickets/{id}` (any create field; `reviewer_id`/`implementer_id` accept `null` to clear) | Update; status/priority changes are recorded in history; 409 for any non-status change while archived |
 | POST `/api/tickets/{id}/move` `{direction: "up"\|"down"}` | Move to adjacent board list; 400 at the ends or if not on the board |
 | GET `/api/users/assignable` | Active users (`id,email,display_name`) for assignee pickers |
+| POST `/api/tickets/{id}/links` `{url,label?}` | Link a webpage (201, returns the ticket). `url` must be http(s), max 2000 chars, no whitespace; `label` max 200; max 50 links per ticket. 409 if the URL is already linked or the ticket is archived |
+| DELETE `/api/tickets/{id}/links/{link_id}` | Remove a link (returns the ticket); 404 if not on that ticket; 409 if archived |
+
+Tickets include `links[]` (`id,url,label,added_by,created_at`). Link adds/removals are recorded in `history` with `field` = `link_added` (`new_value` = URL) or `link_removed` (`old_value` = URL, `new_value` null).
+

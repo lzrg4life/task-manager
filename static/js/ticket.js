@@ -33,6 +33,51 @@ function ensureUserOption(select, u) {
   }
 }
 
+const FIELD_LABELS = { link_added: "Link added", link_removed: "Link removed" };
+const linkForm = document.getElementById("link-form");
+
+function renderLinks(t) {
+  const archived = t.status === "archived";
+  document.getElementById("links-section").hidden = false;
+  document.getElementById("no-links").hidden = t.links.length > 0;
+  linkForm.hidden = archived;
+  document.getElementById("links").replaceChildren(...t.links.map((l) => {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    if (/^https?:\/\//i.test(l.url)) a.href = l.url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = l.label || l.url;
+    a.title = l.url;
+    li.append(a);
+    if (l.label) li.append(` (${l.url})`);
+    if (!archived) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary small";
+      btn.textContent = "Remove";
+      btn.addEventListener("click", async () => {
+        try {
+          render(await api(`/api/tickets/${encodeURIComponent(id)}/links/${l.id}`, { method: "DELETE" }));
+          show("");
+        } catch (err) { show(err.message); }
+      });
+      li.append(" ", btn);
+    }
+    return li;
+  }));
+}
+
+linkForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = { url: linkForm.elements.url.value, label: linkForm.elements.label.value };
+  try {
+    render(await api(`/api/tickets/${encodeURIComponent(id)}/links`, { method: "POST", body }));
+    linkForm.reset();
+    show("");
+  } catch (err) { show(err.message); }
+});
+
 function render(t) {
   document.getElementById("heading").textContent = `${t.key}: ${t.title}`;
   document.title = `${t.key} – Task Manager`;
@@ -50,11 +95,13 @@ function render(t) {
   document.getElementById("readonly-note").hidden = !archived;
   document.getElementById("meta").textContent =
     `Created by ${t.created_by.name} on ${t.created_at}. Last updated ${t.updated_at}.`;
+  renderLinks(t);
   document.getElementById("history-section").hidden = false;
   document.getElementById("history").replaceChildren(...t.history.map((h) => {
     const tr = document.createElement("tr");
-    const label = (v) => (v == null ? "" : (h.field === "status" ? STATUS_LABELS : PRIORITY_LABELS)[v] || v);
-    tr.append(td(h.changed_at), td(h.field), td(label(h.old_value)), td(label(h.new_value)), td(userName(h.changed_by)));
+    const labels = h.field === "status" ? STATUS_LABELS : h.field === "priority" ? PRIORITY_LABELS : {};
+    const label = (v) => (v == null ? "" : labels[v] || v);
+    tr.append(td(h.changed_at), td(FIELD_LABELS[h.field] || h.field), td(label(h.old_value)), td(label(h.new_value)), td(userName(h.changed_by)));
     return tr;
   }));
 }

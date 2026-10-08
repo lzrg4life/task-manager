@@ -573,3 +573,104 @@ async fn tickets_lifecycle() {
     let (s, _) = call(&app, "GET", "/api/tickets/99", Some(&t), None).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn ticket_links_add_remove_and_history() {
+    let app = setup().await;
+    let t = admin_token(&app).await;
+    call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&t),
+        Some(json!({"title": "A"})),
+    )
+    .await;
+    let uri = "/api/tickets/1/links";
+
+    let (s, r) = call(
+        &app,
+        "POST",
+        uri,
+        Some(&t),
+        Some(json!({"url": " https://example.com/a?x=1 ", "label": "Docs"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(r["links"][0]["url"], "https://example.com/a?x=1");
+    assert_eq!(r["links"][0]["label"], "Docs");
+    let link_id = r["links"][0]["id"].as_i64().unwrap();
+    let last = r["history"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["field"], "link_added");
+    assert_eq!(last["new_value"], "https://example.com/a?x=1");
+
+    let (s, _) = call(
+        &app,
+        "POST",
+        uri,
+        Some(&t),
+        Some(json!({"url": "https://example.com/a?x=1"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    for bad in [
+        "javascript:alert(1)",
+        "ftp://x.com",
+        "http://",
+        "https://a b.com",
+        "example.com",
+    ] {
+        let (s, _) = call(&app, "POST", uri, Some(&t), Some(json!({"url": bad}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}");
+    }
+    let (s, _) = call(
+        &app,
+        "POST",
+        uri,
+        None,
+        Some(json!({"url": "https://x.com"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+
+    let (s, r) = call(&app, "DELETE", &format!("{uri}/999"), Some(&t), None).await;
+    assert_eq!((s, r["links"].is_null()), (StatusCode::NOT_FOUND, true));
+    let (s, r) = call(&app, "DELETE", &format!("{uri}/{link_id}"), Some(&t), None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(r["links"].as_array().unwrap().is_empty());
+    let last = r["history"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["field"], "link_removed");
+    assert_eq!(last["old_value"], "https://example.com/a?x=1");
+    assert!(last["new_value"].is_null());
+
+    // archived tickets are read-only
+    call(
+        &app,
+        "POST",
+        uri,
+        Some(&t),
+        Some(json!({"url": "https://example.com/b"})),
+    )
+    .await;
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/1",
+        Some(&t),
+        Some(json!({"status": "archived"})),
+    )
+    .await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        uri,
+        Some(&t),
+        Some(json!({"url": "https://example.com/c"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    let (_, r) = call(&app, "GET", "/api/tickets/1", Some(&t), None).await;
+    let id = r["links"][0]["id"].as_i64().unwrap();
+    let (s, _) = call(&app, "DELETE", &format!("{uri}/{id}"), Some(&t), None).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+}

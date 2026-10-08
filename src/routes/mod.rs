@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
 use crate::{AppState, error::AppError};
@@ -27,6 +27,11 @@ pub fn api_router() -> Router<AppState> {
             get(tickets::get_one).patch(tickets::update),
         )
         .route("/tickets/{id}/move", post(tickets::move_ticket))
+        .route("/tickets/{id}/links", post(tickets::add_link))
+        .route(
+            "/tickets/{id}/links/{link_id}",
+            delete(tickets::remove_link),
+        )
         .route("/roles", get(roles::list).post(roles::create))
         .fallback(|| async { AppError::NotFound })
 }

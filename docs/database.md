@@ -11,4 +11,8 @@ Add changes as new numbered migration files; never edit an applied one.
 
 ## Tickets (migration 0002)
 - `tickets` (id, title, details, business_requirements, technical_requirements, implementation_notes, status, priority, created_by, reviewer_id, implementer_id, created_at, updated_at) – status/priority constrained by CHECK; user-friendly key `TM-<id>` is derived from id
-- `ticket_history` (id, ticket_id, field `status|priority`, old_value (NULL on creation), new_value, changed_by, changed_at)
+- `ticket_history` (id, ticket_id, field `status|priority|link_added|link_removed` [widened in 0003], old_value (NULL on creation/link add), new_value (NULL on link removal), changed_by, changed_at)
+
+## Ticket links (migration 0003)
+- `ticket_links` (id, ticket_id, url, label, created_by, created_at; unique on ticket_id+url) – zero or more per ticket; removal deletes the row, and the add/remove is kept in `ticket_history`
+
