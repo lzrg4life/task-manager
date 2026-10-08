@@ -1,4 +1,5 @@
 import { api, logout } from "./api.js";
+import { showAdminUsersLink } from "./ticket-common.js";
 
 const rows = document.getElementById("user-rows");
 const pageError = document.getElementById("error");
@@ -17,6 +18,7 @@ if (!me) throw new Error("not signed in");
 if (!me.roles.includes("admin")) { location.href = "/"; throw new Error("not an admin"); }
 document.getElementById("whoami").textContent = me.email;
 document.getElementById("logout").addEventListener("click", logout);
+showAdminUsersLink(me);
 
 function cell(text) {
   const td = document.createElement("td");

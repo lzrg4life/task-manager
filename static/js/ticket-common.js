@@ -6,11 +6,21 @@ export const STATUS_LABELS = {
 };
 export const PRIORITY_LABELS = { normal: "Normal", high: "High", low: "Low" };
 
+export function showAdminUsersLink(me) {
+  if (!me.roles.includes("admin")) return;
+  const nav = document.getElementById("main-nav");
+  const link = document.createElement("a");
+  link.href = "/users.html";
+  link.textContent = "Users";
+  nav.append(" · ", link);
+}
+
 export async function initPage() {
   const me = await api("/api/me");
   if (!me) throw new Error("not signed in");
   document.getElementById("whoami").textContent = me.email;
   document.getElementById("logout").addEventListener("click", logout);
+  showAdminUsersLink(me);
   return me;
 }
 
