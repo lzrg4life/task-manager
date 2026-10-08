@@ -26,6 +26,7 @@ async function load() {
     const lists = await api("/api/tickets");
     board.replaceChildren(...lists.map((list, i) => {
       const section = document.createElement("section");
+      section.className = "list";
       const h = document.createElement("h2");
       h.textContent = `${STATUS_LABELS[list.status]} (${list.tickets.length})`;
       section.append(h);

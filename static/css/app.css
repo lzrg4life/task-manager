@@ -1,26 +1,37 @@
 * { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, sans-serif; background: #f3f4f6; color: #111827; }
-.topbar { display: flex; justify-content: space-between; align-items: center; padding: .75rem 1.5rem; background: #1f2937; color: #fff; }
-.card { max-width: 56rem; margin: 2rem auto; padding: 1.5rem; background: #fff; border-radius: .5rem; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+body { margin: 0; font-size: 14px; line-height: 1.35; font-family: system-ui, sans-serif; background: #f3f4f6; color: #111827; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: .3rem .75rem; background: #1f2937; color: #fff; }
+.card { max-width: 56rem; margin: .5rem auto; padding: .5rem; background: #fff; border-radius: .5rem; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
 .card.narrow { max-width: 24rem; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
-label { display: block; margin-bottom: .75rem; font-size: .9rem; }
+label { display: block; margin-bottom: .3rem; font-size: .9rem; }
 label.inline { display: flex; gap: .5rem; align-items: center; }
-input[type=text], input[type=email], input[type=password] { display: block; width: 100%; padding: .5rem; margin-top: .25rem; border: 1px solid #d1d5db; border-radius: .25rem; font: inherit; }
-button { padding: .5rem 1rem; border: 0; border-radius: .25rem; background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
+input[type=text], input[type=email], input[type=password] { display: block; width: 100%; padding: .2rem .35rem; margin-top: .1rem; border: 1px solid #d1d5db; border-radius: .25rem; font: inherit; }
+button { padding: .2rem .6rem; border: 0; border-radius: .25rem; background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
 button.secondary { background: #6b7280; }
-table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #e5e7eb; }
+table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
+th, td { text-align: left; padding: .2rem .4rem; border-bottom: 1px solid #e5e7eb; }
 .error { color: #b91c1c; }
 .badge { display: inline-block; padding: 0 .4rem; margin-right: .25rem; background: #e5e7eb; border-radius: .25rem; font-size: .8rem; }
-dialog { border: 0; border-radius: .5rem; padding: 1.5rem; width: min(28rem, 92vw); }
+dialog { border: 0; border-radius: .5rem; padding: .75rem; width: min(28rem, 92vw); }
 dialog::backdrop { background: rgba(0,0,0,.4); }
-fieldset { margin: 0 0 .75rem; }
+fieldset { margin: 0 0 .4rem; }
 .card.wide { max-width: 72rem; }
 .topbar a { color: #bfdbfe; }
-a.button { padding: .5rem 1rem; border-radius: .25rem; background: #2563eb; color: #fff; text-decoration: none; }
-textarea, select { display: block; width: 100%; padding: .5rem; margin-top: .25rem; border: 1px solid #d1d5db; border-radius: .25rem; font: inherit; }
+a.button { padding: .2rem .6rem; border-radius: .25rem; background: #2563eb; color: #fff; text-decoration: none; }
+textarea, select { display: block; width: 100%; padding: .2rem .35rem; margin-top: .1rem; border: 1px solid #d1d5db; border-radius: .25rem; font: inherit; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0 1rem; }
-.pager { display: flex; gap: .75rem; align-items: center; margin-top: 1rem; }
+.pager { display: flex; gap: .5rem; align-items: center; margin-top: .4rem; }
 td.actions { white-space: nowrap; text-align: right; }
-button.small { padding: .1rem .5rem; }
+button.small { padding: .05rem .4rem; }
+
+h1 { font-size: 1.3rem; margin: .2rem 0 .4rem; }
+h2 { font-size: 1.05rem; margin: .4rem 0 .2rem; }
+p { margin: .3rem 0; }
+.list { border: 1px solid #9ca3af; border-radius: .3rem; margin: 0 0 .5rem; overflow: hidden; background: #fff; }
+.list > h2, .list > .title-bar { margin: 0; padding: .25rem .5rem; background: #e5e7eb; border-bottom: 1px solid #9ca3af; }
+.list > .title-bar { display: flex; justify-content: space-between; align-items: center; }
+.title-bar > h2 { margin: 0; font-size: 1.05rem; }
+.list table { margin-top: 0; }
+.list > p, .list > #list > p { padding: 0 .5rem; }
+.list .pager { margin: .25rem .5rem; }

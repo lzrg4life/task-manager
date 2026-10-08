@@ -12,15 +12,12 @@
     <span><span id="whoami"></span> <button id="logout" class="secondary">Sign out</button></span>
   </header>
   <main class="card">
-    <div class="row">
-      <h1>Users</h1>
-      <button id="add-user">Add user</button>
-    </div>
     <p id="error" class="error" role="alert" hidden></p>
+    <section class="list"><div class="title-bar"><h2>Users</h2><button id="add-user" class="small">Add user</button></div>
     <table>
       <thead><tr><th>Email</th><th>Name</th><th>Roles</th><th>Active</th><th></th></tr></thead>
       <tbody id="user-rows"></tbody>
-    </table>
+    </table></section>
   </main>
 
   <dialog id="user-dialog">
