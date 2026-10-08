@@ -14,6 +14,16 @@
   <main class="card wide">
     <div class="row"><h1>Tickets</h1><a class="button" href="/ticket.html">New ticket</a></div>
     <p id="error" class="error" role="alert" hidden></p>
+    <div class="grid">
+      <label for="ticket-search">Filter by ticket ID or title
+        <input id="ticket-search" type="text" autocomplete="off" placeholder="e.g. TM-12 or Update login page">
+      </label>
+      <label for="ticket-assignee">Filter by reviewer or implementer
+        <select id="ticket-assignee">
+          <option value="">All people</option>
+        </select>
+      </label>
+    </div>
     <div id="board"></div>
   </main>
   <dialog id="archive-dialog" aria-labelledby="archive-title">

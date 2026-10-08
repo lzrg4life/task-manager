@@ -3,11 +3,15 @@ import { initPage, show, ticketRow, ticketTable, STATUS_LABELS } from "./ticket-
 
 await initPage();
 const board = document.getElementById("board");
+const ticketSearch = document.getElementById("ticket-search");
+const ticketAssignee = document.getElementById("ticket-assignee");
 const archiveDialog = document.getElementById("archive-dialog");
 const archiveMessage = document.getElementById("archive-message");
 const archiveError = document.getElementById("archive-error");
 const archiveConfirm = document.getElementById("archive-confirm");
 let ticketToArchive = null;
+let ticketLists = [];
+let assigneesLoaded = false;
 
 async function move(id, direction) {
   try {
@@ -59,37 +63,66 @@ document.getElementById("archive-cancel").addEventListener("click", () => {
   ticketToArchive = null;
 });
 archiveConfirm.addEventListener("click", archiveTicket);
+ticketSearch.addEventListener("input", renderBoard);
+ticketAssignee.addEventListener("change", renderBoard);
+
+function renderBoard() {
+  const search = ticketSearch.value.trim().toLocaleLowerCase();
+  const assigneeId = ticketAssignee.value;
+  board.replaceChildren(...ticketLists.map((list, i) => {
+    const section = document.createElement("section");
+    section.className = "list";
+    const tickets = list.tickets.filter((ticket) => {
+      const matchesSearch = !search
+        || ticket.key.toLocaleLowerCase().includes(search)
+        || ticket.title.toLocaleLowerCase().includes(search);
+      const matchesAssignee = !assigneeId
+        || String(ticket.reviewer?.id) === assigneeId
+        || String(ticket.implementer?.id) === assigneeId;
+      return matchesSearch && matchesAssignee;
+    });
+    const h = document.createElement("h2");
+    h.textContent = `${STATUS_LABELS[list.status]} (${tickets.length})`;
+    section.append(h);
+    if (tickets.length === 0) {
+      const p = document.createElement("p");
+      p.textContent = "No tickets.";
+      section.append(p);
+      return section;
+    }
+    const rows = tickets.map((t) => {
+      const cell = document.createElement("td");
+      cell.className = "actions";
+      cell.append(
+        list.status === "completed"
+          ? moveButton("Archive", "Archive ticket", true, () => openArchiveDialog(t))
+          : moveButton("↑", "Move up", i > 0, () => move(t.id, "up")),
+        " ",
+        moveButton("↓", "Move down", i < ticketLists.length - 1, () => move(t.id, "down")),
+      );
+      return ticketRow(t, cell);
+    });
+    section.append(ticketTable(rows, true));
+    return section;
+  }));
+}
 
 async function load() {
   try {
-    const lists = await api("/api/tickets");
-    board.replaceChildren(...lists.map((list, i) => {
-      const section = document.createElement("section");
-      section.className = "list";
-      const h = document.createElement("h2");
-      h.textContent = `${STATUS_LABELS[list.status]} (${list.tickets.length})`;
-      section.append(h);
-      if (list.tickets.length === 0) {
-        const p = document.createElement("p");
-        p.textContent = "No tickets.";
-        section.append(p);
-        return section;
+    if (!assigneesLoaded) {
+      const users = await api("/api/users/assignable");
+      for (const user of users) {
+        const option = document.createElement("option");
+        option.value = String(user.id);
+        option.textContent = user.display_name
+          ? `${user.display_name} (${user.email})`
+          : user.email;
+        ticketAssignee.append(option);
       }
-      const rows = list.tickets.map((t) => {
-        const cell = document.createElement("td");
-        cell.className = "actions";
-        cell.append(
-          list.status === "completed"
-            ? moveButton("Archive", "Archive ticket", true, () => openArchiveDialog(t))
-            : moveButton("↑", "Move up", i > 0, () => move(t.id, "up")),
-          " ",
-          moveButton("↓", "Move down", i < lists.length - 1, () => move(t.id, "down")),
-        );
-        return ticketRow(t, cell);
-      });
-      section.append(ticketTable(rows, true));
-      return section;
-    }));
+      assigneesLoaded = true;
+    }
+    ticketLists = await api("/api/tickets");
+    renderBoard();
     show("");
   } catch (err) { show(err.message); }
 }
