@@ -88,13 +88,28 @@ function renderBoard() {
         || String(ticket.implementer?.id) === assigneeId;
       return matchesSearch && matchesAssignee;
     });
+    const header = document.createElement("button");
+    header.type = "button";
+    header.className = "title-bar list-toggle";
+    const collapsedByDefault = list.status !== "active";
+    header.setAttribute("aria-expanded", String(!collapsedByDefault));
     const h = document.createElement("h2");
     h.textContent = `${STATUS_LABELS[list.status]} (${tickets.length})`;
-    section.append(h);
+    const body = document.createElement("div");
+    body.classList.add("list-body");
+    const setCollapsed = (collapsed) => {
+      body.hidden = collapsed;
+      header.setAttribute("aria-expanded", String(!collapsed));
+    };
+    header.addEventListener("click", () => setCollapsed(!body.hidden));
+    header.append(h);
+    section.append(header);
+    setCollapsed(collapsedByDefault);
     if (tickets.length === 0) {
       const p = document.createElement("p");
       p.textContent = "No tickets.";
-      section.append(p);
+      body.append(p);
+      section.append(body);
       return section;
     }
     const rows = tickets.map((t) => {
@@ -109,7 +124,8 @@ function renderBoard() {
       );
       return ticketRow(t, cell);
     });
-    section.append(ticketTable(rows, true));
+    body.append(ticketTable(rows, true));
+    section.append(body);
     return section;
   }));
 }
