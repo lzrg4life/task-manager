@@ -87,7 +87,7 @@ async fn login_success_and_failure() {
     let app = setup().await;
     let (s, body) = login(&app, "ADMIN@example.com", ADMIN_PW).await;
     assert_eq!(s, StatusCode::OK);
-    assert_eq!(body["user"]["roles"], json!(["admin"]));
+    assert_eq!(body["user"]["is_admin"], json!(true));
     assert_eq!(
         login(&app, ADMIN_EMAIL, "wrong-password!").await.0,
         StatusCode::UNAUTHORIZED
@@ -208,20 +208,18 @@ async fn logout_revokes_refresh_token() {
 async fn admin_manages_users_and_non_admin_is_blocked() {
     let app = setup().await;
     let admin = admin_token(&app).await;
-    let (s, _) = call(
+    let (s, user) = call(
         &app,
         "POST",
-        "/api/roles",
+        "/api/users",
         Some(&admin),
-        Some(json!({"name": "editor"})),
+        Some(json!({
+            "email": "bob@example.com", "password": "bobs-long-password", "display_name": "Bob"
+        })),
     )
     .await;
     assert_eq!(s, StatusCode::CREATED);
-    let (s, user) = call(&app, "POST", "/api/users", Some(&admin), Some(json!({
-        "email": "bob@example.com", "password": "bobs-long-password", "display_name": "Bob", "roles": ["editor"]
-    }))).await;
-    assert_eq!(s, StatusCode::CREATED);
-    assert_eq!(user["roles"], json!(["editor"]));
+    assert_eq!(user["is_admin"], json!(false));
     let id = user["id"].as_i64().unwrap();
 
     let dup = call(
@@ -230,23 +228,11 @@ async fn admin_manages_users_and_non_admin_is_blocked() {
         "/api/users",
         Some(&admin),
         Some(json!({
-            "email": "BOB@example.com", "password": "bobs-long-password", "roles": ["editor"]
+            "email": "BOB@example.com", "password": "bobs-long-password"
         })),
     )
     .await;
     assert_eq!(dup.0, StatusCode::CONFLICT);
-    let bad_role = call(
-        &app,
-        "POST",
-        "/api/users",
-        Some(&admin),
-        Some(json!({
-            "email": "x@example.com", "password": "bobs-long-password", "roles": ["nope"]
-        })),
-    )
-    .await;
-    assert_eq!(bad_role.0, StatusCode::BAD_REQUEST);
-
     let (_, bob) = login(&app, "bob@example.com", "bobs-long-password").await;
     let bob_token = bob["access_token"].as_str().unwrap();
     assert_eq!(
@@ -284,14 +270,14 @@ async fn admin_manages_users_and_non_admin_is_blocked() {
     .await;
     assert_eq!(s, StatusCode::UNAUTHORIZED);
 
-    // Password reset and role edit.
+    // Password reset and admin promotion.
     let (s, _) = call(
         &app,
         "PATCH",
         &format!("/api/users/{id}"),
         Some(&admin),
         Some(json!({
-            "is_active": true, "password": "a-brand-new-password", "roles": ["admin", "editor"]
+            "is_active": true, "password": "a-brand-new-password", "is_admin": true
         })),
     )
     .await;
@@ -322,21 +308,13 @@ async fn cannot_remove_last_admin() {
         .0,
         StatusCode::CONFLICT
     );
-    call(
-        &app,
-        "POST",
-        "/api/roles",
-        Some(&admin),
-        Some(json!({"name": "viewer"})),
-    )
-    .await;
     assert_eq!(
         call(
             &app,
             "PATCH",
             &uri,
             Some(&admin),
-            Some(json!({"roles": ["viewer"]}))
+            Some(json!({"is_admin": false}))
         )
         .await
         .0,

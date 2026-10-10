@@ -4,7 +4,7 @@ use axum::{
     http::StatusCode,
 };
 use serde::Deserialize;
-use sqlx::{Sqlite, SqlitePool, Transaction};
+use sqlx::SqlitePool;
 
 use crate::{
     AppState,
@@ -19,7 +19,8 @@ pub struct NewUser {
     password: String,
     #[serde(default)]
     display_name: String,
-    roles: Vec<String>,
+    #[serde(default)]
+    is_admin: bool,
 }
 
 #[derive(Deserialize)]
@@ -28,11 +29,11 @@ pub struct UpdateUser {
     display_name: Option<String>,
     password: Option<String>,
     is_active: Option<bool>,
-    roles: Option<Vec<String>>,
+    is_admin: Option<bool>,
 }
 
 pub async fn list(State(state): State<AppState>, user: AuthUser) -> AppResult<Json<Vec<UserOut>>> {
-    user.require_role("admin")?;
+    user.require_admin()?;
     Ok(Json(models::list_users(&state.pool).await?))
 }
 
@@ -41,38 +42,8 @@ pub async fn get_one(
     user: AuthUser,
     Path(id): Path<i64>,
 ) -> AppResult<Json<UserOut>> {
-    user.require_role("admin")?;
+    user.require_admin()?;
     Ok(Json(models::fetch_user(&state.pool, id).await?))
-}
-
-async fn set_roles(
-    tx: &mut Transaction<'_, Sqlite>,
-    user_id: i64,
-    names: &[String],
-) -> AppResult<()> {
-    if names.is_empty() {
-        return Err(AppError::BadRequest(
-            "a user needs at least one role".into(),
-        ));
-    }
-    sqlx::query("DELETE FROM user_roles WHERE user_id = ?")
-        .bind(user_id)
-        .execute(&mut **tx)
-        .await?;
-    for name in names {
-        let role_id: Option<i64> = sqlx::query_scalar("SELECT id FROM roles WHERE name = ?")
-            .bind(name.trim())
-            .fetch_optional(&mut **tx)
-            .await?;
-        let role_id =
-            role_id.ok_or_else(|| AppError::BadRequest(format!("unknown role: {name}")))?;
-        sqlx::query("INSERT OR IGNORE INTO user_roles (user_id, role_id) VALUES (?, ?)")
-            .bind(user_id)
-            .bind(role_id)
-            .execute(&mut **tx)
-            .await?;
-    }
-    Ok(())
 }
 
 fn is_unique_violation(e: &sqlx::Error) -> bool {
@@ -86,27 +57,29 @@ pub async fn create(
     user: AuthUser,
     Json(req): Json<NewUser>,
 ) -> AppResult<(StatusCode, Json<UserOut>)> {
-    user.require_role("admin")?;
+    user.require_admin()?;
     let email = req.email.trim().to_string();
     validate_email(&email)?;
     validate_password(&req.password)?;
     let hash = password::hash(&req.password).await?;
     let mut tx = state.pool.begin().await?;
-    let id = sqlx::query("INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, ?)")
-        .bind(&email)
-        .bind(hash)
-        .bind(req.display_name.trim())
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| {
-            if is_unique_violation(&e) {
-                AppError::Conflict("email already in use".into())
-            } else {
-                e.into()
-            }
-        })?
-        .last_insert_rowid();
-    set_roles(&mut tx, id, &req.roles).await?;
+    let id = sqlx::query(
+        "INSERT INTO users (email, password_hash, display_name, is_admin) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&email)
+    .bind(hash)
+    .bind(req.display_name.trim())
+    .bind(req.is_admin)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| {
+        if is_unique_violation(&e) {
+            AppError::Conflict("email already in use".into())
+        } else {
+            e.into()
+        }
+    })?
+    .last_insert_rowid();
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
@@ -116,8 +89,7 @@ pub async fn create(
 
 async fn other_active_admins(pool: &SqlitePool, excluding: i64) -> AppResult<i64> {
     Ok(sqlx::query_scalar(
-        "SELECT COUNT(*) FROM users u JOIN user_roles ur ON ur.user_id = u.id JOIN roles r ON r.id = ur.role_id \
-         WHERE r.name = 'admin' AND u.is_active = 1 AND u.id != ?",
+        "SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1 AND id != ?",
     )
     .bind(excluding)
     .fetch_one(pool)
@@ -130,15 +102,12 @@ pub async fn update(
     Path(id): Path<i64>,
     Json(req): Json<UpdateUser>,
 ) -> AppResult<Json<UserOut>> {
-    user.require_role("admin")?;
+    user.require_admin()?;
     let current = models::fetch_user(&state.pool, id).await?;
 
     let will_be_active = req.is_active.unwrap_or(current.is_active);
-    let will_be_admin = match &req.roles {
-        Some(r) => r.iter().any(|n| n.trim().eq_ignore_ascii_case("admin")),
-        None => current.roles.iter().any(|n| n == "admin"),
-    };
-    let is_active_admin = current.is_active && current.roles.iter().any(|n| n == "admin");
+    let will_be_admin = req.is_admin.unwrap_or(current.is_admin);
+    let is_active_admin = current.is_active && current.is_admin;
     if is_active_admin
         && !(will_be_active && will_be_admin)
         && other_active_admins(&state.pool, id).await? == 0
@@ -162,13 +131,14 @@ pub async fn update(
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         "UPDATE users SET email = COALESCE(?, email), display_name = COALESCE(?, display_name), \
-         password_hash = COALESCE(?, password_hash), is_active = ?, \
+         password_hash = COALESCE(?, password_hash), is_active = ?, is_admin = ?, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
     )
     .bind(req.email.as_deref().map(str::trim))
     .bind(req.display_name.as_deref().map(str::trim))
     .bind(new_hash.as_deref())
     .bind(will_be_active)
+    .bind(will_be_admin)
     .bind(id)
     .execute(&mut *tx)
     .await
@@ -179,9 +149,6 @@ pub async fn update(
             e.into()
         }
     })?;
-    if let Some(roles) = &req.roles {
-        set_roles(&mut tx, id, roles).await?;
-    }
     tx.commit().await?;
 
     if !will_be_active || req.password.is_some() {

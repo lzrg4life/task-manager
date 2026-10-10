@@ -54,19 +54,13 @@ pub async fn create_first_admin(
     let hash = password::hash(password_plain).await?;
     let mut tx = pool.begin().await?;
     let id = sqlx::query(
-        "INSERT INTO users (email, password_hash, display_name) VALUES (?, ?, 'Administrator')",
+        "INSERT INTO users (email, password_hash, display_name, is_admin) VALUES (?, ?, 'Administrator', 1)",
     )
     .bind(email)
     .bind(hash)
     .execute(&mut *tx)
     .await?
     .last_insert_rowid();
-    sqlx::query(
-        "INSERT INTO user_roles (user_id, role_id) SELECT ?, id FROM roles WHERE name = 'admin'",
-    )
-    .bind(id)
-    .execute(&mut *tx)
-    .await?;
     tx.commit().await?;
     Ok(id)
 }

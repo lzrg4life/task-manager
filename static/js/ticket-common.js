@@ -7,7 +7,7 @@ export const STATUS_LABELS = {
 export const PRIORITY_LABELS = { normal: "Normal", high: "High", low: "Low" };
 
 export function showAdminUsersLink(me) {
-  if (!me.roles.includes("admin")) return;
+  if (!me.is_admin) return;
   const nav = document.getElementById("main-nav");
   const link = document.createElement("a");
   link.href = "/users.html";

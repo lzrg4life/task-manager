@@ -6,7 +6,7 @@
 
 ## Auth flow
 1. `POST /api/auth/login` verifies the Argon2id hash and returns a JWT access token (default 15 min) and an opaque refresh token (default 30 days).
-2. Client sends `Authorization: Bearer <jwt>`; `AuthUser` extractor validates signature/expiry and exposes id, email, roles.
+2. Client sends `Authorization: Bearer <jwt>`; `AuthUser` extractor validates signature/expiry and exposes id, email, and `is_admin`.
 3. On expiry, the client calls `POST /api/auth/refresh`; the refresh token is rotated (old one revoked, new one in the same family). Presenting an already-used token revokes the whole family.
 4. Deactivating a user or resetting their password revokes all of their refresh tokens.
 

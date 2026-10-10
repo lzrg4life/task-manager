@@ -9,11 +9,9 @@ All bodies are JSON; errors are `{"error": "message"}`. Protected routes need `A
 | POST `/api/auth/logout` `{refresh_token}` | none | Revokes the token family; 204 |
 | GET `/api/me` | any user | Current user |
 | GET `/api/users` | admin | List users |
-| POST `/api/users` `{email,password,display_name?,roles[]}` | admin | Create user (201); 409 duplicate email; roles must exist and be non-empty |
+| POST `/api/users` `{email,password,display_name?,is_admin?}` | admin | Create user (201); 409 duplicate email |
 | GET `/api/users/{id}` | admin | One user |
-| PATCH `/api/users/{id}` `{email?,display_name?,password?,roles?,is_active?}` | admin | Update; 409 if it would remove the last active admin |
-| GET `/api/roles` | admin | List roles |
-| POST `/api/roles` `{name,description?}` | admin | Create role (name `[a-z0-9_-]{1,32}`) |
+| PATCH `/api/users/{id}` `{email?,display_name?,password?,is_admin?,is_active?}` | admin | Update; 409 if it would remove the last active admin |
 
 Passwords: 10-128 characters. Unknown `/api/*` paths return JSON 404.
 
@@ -34,4 +32,3 @@ All endpoints require any signed-in user. Statuses: `archived, completed, in_rev
 | DELETE `/api/tickets/{id}/links/{link_id}` | Remove a link (returns the ticket); 404 if not on that ticket; 409 if archived |
 
 Tickets include `links[]` (`id,url,label,added_by,created_at`). Link adds/removals are recorded in `history` with `field` = `link_added` (`new_value` = URL) or `link_removed` (`old_value` = URL, `new_value` null).
-

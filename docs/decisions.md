@@ -5,5 +5,5 @@
 - Argon2id for passwords; per-hash random salt.
 - Vanilla HTML/CSS/JS, no build step, to keep the client simple.
 - JWT HS256 access tokens (short TTL) + opaque rotating refresh tokens stored hashed; reuse detection revokes the family.
-- Free-form roles table; `admin` is the only built-in role. Permissions per role are a future extension.
+- Authorization uses a single `is_admin` boolean on each user; non-admin users have no additional role concept.
 - Users are deactivated, not deleted. First admin is created only via `init-db`.

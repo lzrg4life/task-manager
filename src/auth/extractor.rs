@@ -7,21 +7,17 @@ use super::jwt;
 use crate::{AppState, error::AppError};
 
 /// Authenticated caller, built from a valid `Authorization: Bearer <jwt>` header.
-/// Roles come from the token, so role changes take effect when the access token is refreshed.
+/// Admin status comes from the token, so changes take effect when the access token is refreshed.
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub id: i64,
     pub email: String,
-    pub roles: Vec<String>,
+    pub is_admin: bool,
 }
 
 impl AuthUser {
-    pub fn has_role(&self, role: &str) -> bool {
-        self.roles.iter().any(|r| r.eq_ignore_ascii_case(role))
-    }
-
-    pub fn require_role(&self, role: &str) -> Result<(), AppError> {
-        if self.has_role(role) {
+    pub fn require_admin(&self) -> Result<(), AppError> {
+        if self.is_admin {
             Ok(())
         } else {
             Err(AppError::Forbidden)
@@ -45,7 +41,7 @@ impl FromRequestParts<AppState> for AuthUser {
         Ok(AuthUser {
             id: claims.sub.parse().map_err(|_| AppError::Unauthorized)?,
             email: claims.email,
-            roles: claims.roles,
+            is_admin: claims.is_admin,
         })
     }
 }

@@ -2,12 +2,12 @@
 
 SQLite via sqlx; migrations in `migrations/` (embedded at compile time). Foreign keys on, WAL mode for file DBs.
 
-- `users` (id, email unique nocase, password_hash [Argon2id PHC], display_name, is_active, created_at, updated_at)
-- `roles` (id, name unique nocase, description) – `admin` seeded by migration 0001
-- `user_roles` (user_id, role_id) – many-to-many
+- `users` (id, email unique nocase, password_hash [Argon2id PHC], display_name, is_active, is_admin, created_at, updated_at)
 - `refresh_tokens` (id, user_id, token_hash [SHA-256 hex], family_id, expires_at, revoked_at, replaced_by, created_at) – times are unix seconds
 
 Add changes as new numbered migration files; never edit an applied one.
+
+Migration 0004 converts existing `admin` memberships to `is_admin = 1` and removes the obsolete role tables.
 
 ## Tickets (migration 0002)
 - `tickets` (id, title, details, business_requirements, technical_requirements, implementation_notes, status, priority, created_by, reviewer_id, implementer_id, created_at, updated_at) – status/priority constrained by CHECK; user-friendly key `TM-<id>` is derived from id
@@ -15,4 +15,3 @@ Add changes as new numbered migration files; never edit an applied one.
 
 ## Ticket links (migration 0003)
 - `ticket_links` (id, ticket_id, url, label, created_by, created_at; unique on ticket_id+url) – zero or more per ticket; removal deletes the row, and the add/remove is kept in `ticket_history`
-

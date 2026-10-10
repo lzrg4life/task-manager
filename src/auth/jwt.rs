@@ -7,7 +7,7 @@ use crate::error::{AppError, AppResult};
 pub struct Claims {
     pub sub: String,
     pub email: String,
-    pub roles: Vec<String>,
+    pub is_admin: bool,
     pub iat: u64,
     pub exp: u64,
     pub jti: String,
@@ -24,14 +24,14 @@ pub fn issue(
     secret: &str,
     user_id: i64,
     email: &str,
-    roles: Vec<String>,
+    is_admin: bool,
     ttl_secs: u64,
 ) -> AppResult<String> {
     let now = now_secs();
     let claims = Claims {
         sub: user_id.to_string(),
         email: email.to_owned(),
-        roles,
+        is_admin,
         iat: now,
         exp: now + ttl_secs,
         jti: uuid::Uuid::new_v4().to_string(),

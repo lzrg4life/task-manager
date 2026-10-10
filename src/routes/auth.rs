@@ -39,7 +39,7 @@ async fn token_response(
         &state.config.jwt_secret,
         user.id,
         &user.email,
-        user.roles.clone(),
+        user.is_admin,
         ttl,
     )?;
     Ok(TokenResponse {

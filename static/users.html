@@ -15,7 +15,7 @@
     <p id="error" class="error" role="alert" hidden></p>
     <section class="list"><div class="title-bar"><h2>Users</h2><button id="add-user" class="small">Add user</button></div>
     <table>
-      <thead><tr><th>Email</th><th>Name</th><th>Roles</th><th>Active</th><th></th></tr></thead>
+      <thead><tr><th>Email</th><th>Name</th><th>Admin</th><th>Active</th><th></th></tr></thead>
       <tbody id="user-rows"></tbody>
     </table></section>
   </main>
@@ -26,11 +26,7 @@
       <label>Email <input type="email" name="email" required></label>
       <label>Display name <input type="text" name="display_name"></label>
       <label><span id="password-label">Password</span> <input type="password" name="password" autocomplete="new-password" minlength="10"></label>
-      <fieldset>
-        <legend>Roles</legend>
-        <div id="role-boxes"></div>
-        <div class="row"><input type="text" id="new-role" placeholder="new role name"> <button type="button" id="add-role" class="secondary">Add role</button></div>
-      </fieldset>
+      <label class="inline"><input type="checkbox" name="is_admin"> Administrator</label>
       <label id="active-row" class="inline"><input type="checkbox" name="is_active" checked> Active</label>
       <p id="dialog-error" class="error" role="alert" hidden></p>
       <div class="row">
