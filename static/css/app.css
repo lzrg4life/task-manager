@@ -26,6 +26,7 @@ dialog::backdrop { background: rgba(0,0,0,.4); }
 fieldset { margin: 0 0 .4rem; }
 .card.wide { max-width: 72rem; }
 .topbar a { color: #bfdbfe; }
+.topbar a[aria-current="page"] { color: #fff; font-weight: 700; }
 a.button { padding: .2rem .6rem; border-radius: .25rem; background: #2563eb; color: #fff; text-decoration: none; }
 textarea, select { display: block; width: 100%; padding: .2rem .35rem; margin-top: .1rem; border: 1px solid #d1d5db; border-radius: .25rem; font: inherit; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0 1rem; }

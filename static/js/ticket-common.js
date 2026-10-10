@@ -1,4 +1,4 @@
-import { api, logout } from "./api.js";
+import { initNavbar } from "./navbar.js";
 
 export const STATUS_LABELS = {
   archived: "Archived", completed: "Completed", in_review: "In Review", active: "Active",
@@ -6,22 +6,8 @@ export const STATUS_LABELS = {
 };
 export const PRIORITY_LABELS = { normal: "Normal", high: "High", low: "Low" };
 
-export function showAdminUsersLink(me) {
-  if (!me.is_admin) return;
-  const nav = document.getElementById("main-nav");
-  const link = document.createElement("a");
-  link.href = "/users.html";
-  link.textContent = "Users";
-  nav.append(" · ", link);
-}
-
 export async function initPage() {
-  const me = await api("/api/me");
-  if (!me) throw new Error("not signed in");
-  document.getElementById("whoami").textContent = me.email;
-  document.getElementById("logout").addEventListener("click", logout);
-  showAdminUsersLink(me);
-  return me;
+  return initNavbar();
 }
 
 export function show(msg) {
