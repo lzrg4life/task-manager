@@ -21,8 +21,8 @@ All endpoints require any signed-in user. Statuses: `archived, completed, in_rev
 | Endpoint | Description |
 |---|---|
 | GET `/api/tickets` | Board: array of `{status, tickets[]}` in order completed, in_review, active, up_next, backlog; tickets ordered by id; archived/removed excluded |
-| GET `/api/tickets/archived?page=&per_page=` | Paginated `{items,page,per_page,total}` (default 25/page, max 100) |
-| GET `/api/tickets/removed?page=&per_page=` | Same for removed tickets |
+| GET `/api/tickets/archived?page=&per_page=&search=&assignee_id=` | Paginated `{items,page,per_page,total}` (default 25/page, max 100); optional case-insensitive ID/title substring and reviewer/implementer user ID filters |
+| GET `/api/tickets/removed?page=&per_page=&search=&assignee_id=` | Same for removed tickets |
 | POST `/api/tickets` `{title,details?,business_requirements?,technical_requirements?,implementation_notes?,status?,priority?,reviewer_id?,implementer_id?}` | Create (201); defaults backlog/normal; 400 on invalid title or inactive/unknown assignee |
 | GET `/api/tickets/{id}` | Full ticket with creator, assignees and status/priority `history` |
 | PATCH `/api/tickets/{id}` (any create field; `reviewer_id`/`implementer_id` accept `null` to clear) | Update; status/priority changes are recorded in history; 409 for any non-status change while archived |

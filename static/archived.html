@@ -8,9 +8,23 @@
 </head>
 <body>
   <main class="card wide">
-    <p id="error" class="error" role="alert" hidden></p>
-    <section class="list"><h2>Archived tickets</h2><div id="list" data-kind="archived"></div></section>
-  </main>
-  <script type="module" src="/js/ticket-pages.js"></script>
+  <div class="row">
+    <h1>Archived tickets</h1>
+    <button type="button" id="toggle-filters" class="secondary" aria-expanded="false" aria-controls="ticket-filters">Show filters</button>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="ticket-filters" class="grid" hidden>
+    <label for="ticket-search">Filter by ticket ID or title
+      <input id="ticket-search" type="text" autocomplete="off" placeholder="e.g. TM-12 or Update login page">
+    </label>
+    <label for="ticket-assignee">Filter by reviewer or implementer
+      <select id="ticket-assignee">
+        <option value="">All people</option>
+      </select>
+    </label>
+  </div>
+  <section class="list"><div id="list" data-kind="archived"></div></section>
+</main>
+  <script type="module" src="/js/ticket-pages.js?v=2"></script>
 </body>
 </html>

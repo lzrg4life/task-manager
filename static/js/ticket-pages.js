@@ -4,11 +4,62 @@ import { initPage, show, ticketRow, ticketTable } from "./ticket-common.js";
 await initPage();
 const container = document.getElementById("list");
 const kind = container.dataset.kind;
+const ticketSearch = document.getElementById("ticket-search");
+const ticketAssignee = document.getElementById("ticket-assignee");
+const ticketFilters = document.getElementById("ticket-filters");
+const filterToggle = document.getElementById("toggle-filters");
 let page = 1;
+let requestId = 0;
+let assigneesLoaded = false;
+let assigneesPromise;
+let searchTimeout;
+
+ticketSearch.addEventListener("input", () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(() => {
+    page = 1;
+    load();
+  }, 200);
+});
+ticketAssignee.addEventListener("change", () => {
+  page = 1;
+  load();
+});
+filterToggle.addEventListener("click", () => {
+  ticketFilters.hidden = !ticketFilters.hidden;
+  filterToggle.setAttribute("aria-expanded", String(!ticketFilters.hidden));
+  filterToggle.textContent = ticketFilters.hidden ? "Show filters" : "Hide filters";
+});
 
 async function load() {
+  const currentRequest = ++requestId;
   try {
-    const data = await api(`/api/tickets/${kind}?page=${page}&per_page=25`);
+    if (!assigneesLoaded) {
+      assigneesPromise ??= api("/api/users/assignable")
+        .then((users) => {
+          for (const user of users) {
+            const option = document.createElement("option");
+            option.value = String(user.id);
+            option.textContent = user.display_name
+              ? `${user.display_name} (${user.email})`
+              : user.email;
+            ticketAssignee.append(option);
+          }
+          assigneesLoaded = true;
+        })
+        .catch((err) => {
+          assigneesPromise = undefined;
+          throw err;
+        });
+      await assigneesPromise;
+      if (currentRequest !== requestId) return;
+    }
+    const params = new URLSearchParams({ page: String(page), per_page: "25" });
+    const search = ticketSearch.value.trim();
+    if (search) params.set("search", search);
+    if (ticketAssignee.value) params.set("assignee_id", ticketAssignee.value);
+    const data = await api(`/api/tickets/${kind}?${params}`);
+    if (currentRequest !== requestId) return;
     const pages = Math.max(1, Math.ceil(data.total / data.per_page));
     const prev = document.createElement("button");
     prev.textContent = "Previous";
@@ -27,7 +78,9 @@ async function load() {
     pager.append(prev, info, next);
     container.replaceChildren(ticketTable(data.items.map((t) => ticketRow(t))), pager);
     show("");
-  } catch (err) { show(err.message); }
+  } catch (err) {
+    if (currentRequest === requestId) show(err.message);
+  }
 }
 
 await load();

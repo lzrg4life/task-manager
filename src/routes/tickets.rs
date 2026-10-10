@@ -312,6 +312,8 @@ pub async fn list(
 pub struct PageQuery {
     page: Option<i64>,
     per_page: Option<i64>,
+    search: Option<String>,
+    assignee_id: Option<i64>,
 }
 
 #[derive(Serialize)]
@@ -325,14 +327,36 @@ pub struct Page {
 async fn paged(pool: &SqlitePool, status: Status, q: PageQuery) -> AppResult<Json<Page>> {
     let page = q.page.unwrap_or(1).max(1);
     let per_page = q.per_page.unwrap_or(25).clamp(1, 100);
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tickets WHERE status = ?")
-        .bind(status.as_str())
-        .fetch_one(pool)
-        .await?;
+    let search = q.search.as_deref().unwrap_or("").trim();
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM tickets t WHERE t.status = ? \
+         AND (? = '' OR instr(lower('TM-' || t.id), lower(?)) > 0 \
+              OR instr(lower(t.title), lower(?)) > 0) \
+         AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?)",
+    )
+    .bind(status.as_str())
+    .bind(search)
+    .bind(search)
+    .bind(search)
+    .bind(q.assignee_id)
+    .bind(q.assignee_id)
+    .bind(q.assignee_id)
+    .fetch_one(pool)
+    .await?;
     let items = sqlx::query_as::<_, TicketRow>(&format!(
-        "{SELECT_TICKET} WHERE t.status = ? ORDER BY t.id LIMIT ? OFFSET ?"
+        "{SELECT_TICKET} WHERE t.status = ? \
+         AND (? = '' OR instr(lower('TM-' || t.id), lower(?)) > 0 \
+              OR instr(lower(t.title), lower(?)) > 0) \
+         AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?) \
+         ORDER BY t.id LIMIT ? OFFSET ?"
     ))
     .bind(status.as_str())
+    .bind(search)
+    .bind(search)
+    .bind(search)
+    .bind(q.assignee_id)
+    .bind(q.assignee_id)
+    .bind(q.assignee_id)
     .bind(per_page)
     .bind((page - 1).saturating_mul(per_page))
     .fetch_all(pool)

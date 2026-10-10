@@ -482,6 +482,14 @@ async fn tickets_lifecycle() {
         "PATCH",
         "/api/tickets/2",
         Some(&t),
+        Some(json!({"reviewer_id": 1})),
+    )
+    .await;
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&t),
         Some(json!({"status": "archived"})),
     )
     .await;
@@ -531,8 +539,34 @@ async fn tickets_lifecycle() {
         (p["total"].as_i64(), p["items"][0]["key"].as_str()),
         (Some(1), Some("TM-2"))
     );
+    let (_, p) = call(
+        &app,
+        "GET",
+        "/api/tickets/archived?search=tm-2&assignee_id=1",
+        Some(&t),
+        None,
+    )
+    .await;
+    assert_eq!(
+        (p["total"].as_i64(), p["items"][0]["key"].as_str()),
+        (Some(1), Some("TM-2"))
+    );
+    let (_, p) = call(
+        &app,
+        "GET",
+        "/api/tickets/archived?search=not-found",
+        Some(&t),
+        None,
+    )
+    .await;
+    assert_eq!(p["total"], 0);
     let (_, p) = call(&app, "GET", "/api/tickets/removed?page=2", Some(&t), None).await;
     assert!(p["items"].as_array().unwrap().is_empty());
+    let (_, p) = call(&app, "GET", "/api/tickets/removed?search=a", Some(&t), None).await;
+    assert_eq!(
+        (p["total"].as_i64(), p["items"][0]["key"].as_str()),
+        (Some(1), Some("TM-1"))
+    );
     let (s, r) = call(
         &app,
         "PATCH",
