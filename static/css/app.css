@@ -35,6 +35,14 @@ textarea, select { display: block; width: 100%; padding: .2rem .35rem; margin-to
 .pager { display: flex; gap: .5rem; align-items: center; margin-top: .4rem; }
 td.actions { white-space: nowrap; text-align: right; }
 button.small { padding: .05rem .4rem; }
+.comments-row > td { padding: .4rem .6rem; background: #f9fafb; }
+.comment-thread { display: grid; gap: .5rem; }
+.comment { padding: .4rem; border: 1px solid #e5e7eb; border-radius: .25rem; }
+.comment-meta { color: #4b5563; font-size: .9rem; }
+.comment-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+.comment-form { display: grid; gap: .3rem; }
+.comment-form textarea { min-height: 4rem; }
+.comment-actions { display: flex; gap: .3rem; margin-top: .3rem; }
 
 h1 { font-size: 1.3rem; margin: .2rem 0 .4rem; }
 h2 { font-size: 1.05rem; margin: .4rem 0 .2rem; }

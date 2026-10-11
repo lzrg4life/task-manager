@@ -1,10 +1,16 @@
 import { api } from "./api.js";
 import { initPage, show, td, userName, STATUS_LABELS, PRIORITY_LABELS } from "./ticket-common.js";
 
-await initPage();
+const currentUser = await initPage();
 const form = document.getElementById("ticket-form");
 const id = new URLSearchParams(location.search).get("id");
 const TEXT_FIELDS = ["title", "details", "business_requirements", "technical_requirements", "implementation_notes"];
+const commentsSection = document.getElementById("comments-section");
+const commentsList = document.getElementById("comments");
+const commentsError = document.getElementById("comments-error");
+const commentForm = document.getElementById("comment-form");
+let comments = [];
+let editingCommentId = null;
 
 function fillOptions(select, entries) {
   select.replaceChildren(...entries.map(([value, label]) => {
@@ -33,6 +39,125 @@ function ensureUserOption(select, u) {
     select.append(o);
   }
 }
+
+function showCommentsError(message) {
+  commentsError.textContent = message;
+  commentsError.hidden = !message;
+}
+
+function commentButton(label, handler) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary small";
+  button.textContent = label;
+  button.addEventListener("click", handler);
+  return button;
+}
+
+function renderComments() {
+  commentsList.replaceChildren(...comments.map((comment) => {
+    const item = document.createElement("article");
+    item.className = "comment";
+    const meta = document.createElement("div");
+    meta.className = "comment-meta";
+    meta.textContent = `${comment.author_name} · ${comment.created_at}${comment.updated_at !== comment.created_at && !comment.deleted_at ? " (edited)" : ""}`;
+    item.append(meta);
+
+    if (comment.deleted_at) {
+      const deleted = document.createElement("p");
+      deleted.className = "comment-body";
+      deleted.textContent = "Comment deleted";
+      item.append(deleted);
+    } else if (editingCommentId === comment.id) {
+      const editForm = document.createElement("form");
+      editForm.className = "comment-form";
+      const input = document.createElement("textarea");
+      input.maxLength = 5000;
+      input.required = true;
+      input.value = comment.body;
+      const actions = document.createElement("div");
+      actions.className = "comment-actions";
+      const save = document.createElement("button");
+      save.type = "submit";
+      save.textContent = "Save";
+      actions.append(save, commentButton("Cancel", () => {
+        editingCommentId = null;
+        renderComments();
+      }));
+      editForm.append(input, actions);
+      editForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        save.disabled = true;
+        try {
+          await api(`/api/tickets/${encodeURIComponent(id)}/comments/${comment.id}`, {
+            method: "PATCH",
+            body: { body: input.value },
+          });
+          editingCommentId = null;
+          await loadComments();
+        } catch (err) {
+          showCommentsError(err.message);
+          save.disabled = false;
+        }
+      });
+      item.append(editForm);
+    } else {
+      const body = document.createElement("p");
+      body.className = "comment-body";
+      body.textContent = comment.body;
+      item.append(body);
+      if (comment.user_id === currentUser.id || currentUser.is_admin) {
+        const actions = document.createElement("div");
+        actions.className = "comment-actions";
+        actions.append(commentButton("Edit", () => {
+          editingCommentId = comment.id;
+          renderComments();
+        }));
+        actions.append(commentButton("Delete", async () => {
+          if (!confirm("Delete this comment?")) return;
+          try {
+            await api(`/api/tickets/${encodeURIComponent(id)}/comments/${comment.id}`, {
+              method: "DELETE",
+            });
+            await loadComments();
+          } catch (err) {
+            showCommentsError(err.message);
+          }
+        }));
+        item.append(actions);
+      }
+    }
+    return item;
+  }));
+}
+
+async function loadComments() {
+  try {
+    comments = await api(`/api/tickets/${encodeURIComponent(id)}/comments`);
+    showCommentsError("");
+    renderComments();
+  } catch (err) {
+    showCommentsError(err.message);
+  }
+}
+
+commentForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submit = commentForm.querySelector("button[type=submit]");
+  submit.disabled = true;
+  try {
+    await api(`/api/tickets/${encodeURIComponent(id)}/comments`, {
+      method: "POST",
+      body: { body: commentForm.elements.body.value },
+    });
+    commentForm.reset();
+    await loadComments();
+  } catch (err) {
+    showCommentsError(err.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
 
 const FIELD_LABELS = { link_added: "Link added", link_removed: "Link removed", blocked: "Blocked", unblocked: "Unblocked" };
 const blockForm = document.getElementById("block-form");
@@ -255,7 +380,11 @@ function render(t) {
 }
 
 if (id) {
-  try { render(await api(`/api/tickets/${encodeURIComponent(id)}`)); } catch (err) { show(err.message); }
+  try {
+    render(await api(`/api/tickets/${encodeURIComponent(id)}`));
+    commentsSection.hidden = false;
+    await loadComments();
+  } catch (err) { show(err.message); }
 }
 
 form.addEventListener("submit", async (e) => {

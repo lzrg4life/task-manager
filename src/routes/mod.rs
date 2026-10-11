@@ -6,6 +6,7 @@ use axum::{
 use crate::{AppState, error::AppError};
 
 pub mod auth;
+pub mod comments;
 pub mod tags;
 pub mod tickets;
 pub mod users;
@@ -30,6 +31,14 @@ pub fn api_router() -> Router<AppState> {
             get(tickets::get_one).patch(tickets::update),
         )
         .route("/tickets/{id}/move", post(tickets::move_ticket))
+        .route(
+            "/tickets/{id}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route(
+            "/tickets/{id}/comments/{comment_id}",
+            axum::routing::patch(comments::update).delete(comments::delete),
+        )
         .route("/tickets/{id}/block", post(tickets::block))
         .route("/tickets/{id}/unblock", post(tickets::unblock))
         .route("/tickets/{id}/links", post(tickets::add_link))

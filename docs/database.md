@@ -19,6 +19,9 @@ Migration 0004 converts existing `admin` memberships to `is_admin = 1` and remov
 ## Ticket relations (migration 0007)
 - `ticket_relations` (ticket_id, related_ticket_id, created_by, created_at; composite primary key) – symmetric ticket relationships stored once with the lower ticket ID first; self-relations are prevented
 
+## Ticket comments (migration 0009)
+- `ticket_comments` (id, ticket_id, user_id, body, created_at, updated_at, deleted_at) – comments belong to a ticket and an author; deleted comments are retained and hidden from API responses except for their deleted marker
+
 ## Tags (migrations 0005-0006)
 - `tags` (id, name [unique, case-insensitive], description, archived) – created and archived by admins; archived tags remain associated but are excluded from new assignments
 - `ticket_tags` (ticket_id, tag_id; composite primary key) – zero or more tag associations per ticket; both foreign keys cascade on deletion

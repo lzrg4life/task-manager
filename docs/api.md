@@ -37,9 +37,15 @@ All endpoints require any signed-in user. Statuses: `archived, completed, in_rev
 | DELETE `/api/tickets/{id}/links/{link_id}` | Remove a link (returns the ticket); 404 if not on that ticket; 409 if archived |
 | POST `/api/tickets/{id}/block` `{reason}` | Flag the ticket as blocked (returns the ticket); any signed-in user; `reason` trimmed, 1-500 chars (400 otherwise); 409 if already blocked or archived |
 | POST `/api/tickets/{id}/unblock` | Clear the blocked flag (returns the ticket); any signed-in user; 409 if not blocked or archived |
+| GET `/api/tickets/{id}/comments` | List comments in creation order, including deleted-comment markers |
+| POST `/api/tickets/{id}/comments` `{body}` | Add a comment (201); trimmed body must be 1-5000 characters |
+| PATCH `/api/tickets/{id}/comments/{comment_id}` `{body}` | Edit an undeleted comment; only its author or an admin may edit; 409 if already deleted |
+| DELETE `/api/tickets/{id}/comments/{comment_id}` | Soft-delete a comment; only its author or an admin may delete; 204 |
 | POST `/api/tickets/{id}/related` `{related_ticket_id}` | Relate two tickets symmetrically (201, returns the ticket); any signed-in user may do this; 400 for a self-link, 404 for an unknown ticket, 409 if already related or either ticket is archived |
 | DELETE `/api/tickets/{id}/related/{related_id}` | Remove a ticket relation (returns the ticket); the relation is removed in both directions; 404 if not related; 409 if either ticket is archived |
 | POST `/api/tickets/{id}/tags` `{tag_id}` | Associate an active tag (returns the ticket); any signed-in user may add tags, including on archived tickets; 409 if the tag is archived |
 | DELETE `/api/tickets/{id}/tags/{tag_id}` | Remove a tag association (returns the ticket); any signed-in user may remove tags |
 
 Tickets include `tags[]` (`id,name,description,archived`), `links[]` (`id,url,label,added_by,created_at`), and `related_tickets[]` (ticket summaries). Archived tags remain in ticket responses and are not removed from existing ticket associations. Comma-separated `tag_ids` in list queries filters with AND semantics: a ticket must have every selected tag. Link adds/removals are recorded in `history` with `field` = `link_added` (`new_value` = URL) or `link_removed` (`old_value` = URL, `new_value` null). Ticket summaries and tickets include `blocked` (bool) and `blocked_reason` (string or null). Blocking is independent of status: status changes (PATCH/move) are allowed while blocked and the flag persists until explicitly unblocked. Blocking/unblocking is recorded in `history` with `field` = `blocked` (`new_value` = reason) or `unblocked` (`old_value` = reason, `new_value` null).
+
+Comments are visible to any signed-in user. Responses include `id,ticket_id,user_id,author_name,author_email,body,created_at,updated_at,deleted_at`; deleted comments remain in the thread with `body: null` and a `deleted_at` timestamp. Comment text is retained in storage but hidden from API responses after deletion. Deleted comments cannot be edited or deleted again.

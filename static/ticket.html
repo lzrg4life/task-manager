@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Ticket – Task Manager</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css">
+  <link rel="stylesheet" href="/css/app.css?v=4">
 </head>
 <body>
   <main class="card wide fixed-head">
@@ -29,6 +29,16 @@
       <label>Implementation notes <textarea name="implementation_notes" rows="4"></textarea></label>
       <p id="meta"></p>
     </form>
+    <section id="comments-section" class="list" hidden>
+      <h2>Comments</h2>
+      <p id="comments-error" class="error" role="alert" hidden></p>
+      <div id="comments" class="comment-thread"></div>
+      <form id="comment-form" class="comment-form">
+        <label for="comment-input">Add a comment</label>
+        <textarea id="comment-input" name="body" maxlength="5000" required></textarea>
+        <button type="submit">Add comment</button>
+      </form>
+    </section>
     <section id="blocked-section" class="list" hidden>
       <h2>Blocked</h2>
       <p id="blocked-note"></p>
@@ -69,6 +79,6 @@
     </section>
     </div>
   </main>
-  <script type="module" src="/js/ticket.js"></script>
+  <script type="module" src="/js/ticket.js?v=2"></script>
 </body>
 </html>

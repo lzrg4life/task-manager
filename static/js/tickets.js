@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { initPage, show, ticketRow, ticketTable, STATUS_LABELS } from "./ticket-common.js";
 
-await initPage();
+const currentUser = await initPage();
 const board = document.getElementById("board");
 const ticketSearch = document.getElementById("ticket-search");
 const ticketAssignee = document.getElementById("ticket-assignee");
@@ -16,6 +16,154 @@ let ticketToArchive = null;
 let ticketLists = [];
 let assigneesLoaded = false;
 let tagsLoaded = false;
+const openComments = new Set();
+const commentsByTicket = new Map();
+const loadingComments = new Set();
+const commentsErrors = new Map();
+const editingComments = new Map();
+
+function setCommentsError(ticketId, message) {
+  commentsErrors.set(ticketId, message);
+}
+
+async function loadComments(ticketId) {
+  loadingComments.add(ticketId);
+  commentsErrors.delete(ticketId);
+  renderBoard();
+  try {
+    commentsByTicket.set(ticketId, await api(`/api/tickets/${ticketId}/comments`));
+  } catch (err) {
+    setCommentsError(ticketId, err.message);
+  } finally {
+    loadingComments.delete(ticketId);
+    renderBoard();
+  }
+}
+
+function commentActionButton(label, handler) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary small";
+  button.textContent = label;
+  button.addEventListener("click", handler);
+  return button;
+}
+
+function renderComments(ticketId) {
+  const thread = document.createElement("div");
+  thread.className = "comment-thread";
+  if (loadingComments.has(ticketId)) {
+    const loading = document.createElement("p");
+    loading.textContent = "Loading comments…";
+    thread.append(loading);
+  } else if (commentsErrors.has(ticketId)) {
+    const error = document.createElement("p");
+    error.className = "error";
+    error.textContent = commentsErrors.get(ticketId);
+    thread.append(error, commentActionButton("Retry", () => loadComments(ticketId)));
+  } else {
+    for (const comment of commentsByTicket.get(ticketId) || []) {
+      const item = document.createElement("article");
+      item.className = "comment";
+      const meta = document.createElement("div");
+      meta.className = "comment-meta";
+      meta.textContent = `${comment.author_name} · ${comment.created_at}${comment.updated_at !== comment.created_at && !comment.deleted_at ? " (edited)" : ""}`;
+      item.append(meta);
+
+      if (comment.deleted_at) {
+        const deleted = document.createElement("p");
+        deleted.className = "comment-body";
+        deleted.textContent = "Comment deleted";
+        item.append(deleted);
+      } else if (editingComments.get(ticketId) === comment.id) {
+        const form = document.createElement("form");
+        form.className = "comment-form";
+        const textarea = document.createElement("textarea");
+        textarea.maxLength = 5000;
+        textarea.required = true;
+        textarea.value = comment.body;
+        const actions = document.createElement("div");
+        actions.className = "comment-actions";
+        const save = document.createElement("button");
+        save.type = "submit";
+        save.textContent = "Save";
+        actions.append(save, commentActionButton("Cancel", () => {
+          editingComments.delete(ticketId);
+          renderBoard();
+        }));
+        form.append(textarea, actions);
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          save.disabled = true;
+          try {
+            await api(`/api/tickets/${ticketId}/comments/${comment.id}`, {
+              method: "PATCH",
+              body: { body: textarea.value },
+            });
+            editingComments.delete(ticketId);
+            await loadComments(ticketId);
+          } catch (err) {
+            setCommentsError(ticketId, err.message);
+            renderBoard();
+          }
+        });
+        item.append(form);
+      } else {
+        const body = document.createElement("p");
+        body.className = "comment-body";
+        body.textContent = comment.body;
+        item.append(body);
+        if (comment.user_id === currentUser.id || currentUser.is_admin) {
+          const actions = document.createElement("div");
+          actions.className = "comment-actions";
+          actions.append(commentActionButton("Edit", () => {
+            editingComments.set(ticketId, comment.id);
+            renderBoard();
+          }));
+          actions.append(commentActionButton("Delete", async () => {
+            if (!confirm("Delete this comment?")) return;
+            try {
+              await api(`/api/tickets/${ticketId}/comments/${comment.id}`, { method: "DELETE" });
+              await loadComments(ticketId);
+            } catch (err) {
+              setCommentsError(ticketId, err.message);
+              renderBoard();
+            }
+          }));
+          item.append(actions);
+        }
+      }
+      thread.append(item);
+    }
+
+    const form = document.createElement("form");
+    form.className = "comment-form";
+    const textarea = document.createElement("textarea");
+    textarea.maxLength = 5000;
+    textarea.required = true;
+    textarea.placeholder = "Add a comment…";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "Add comment";
+    form.append(textarea, submit);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submit.disabled = true;
+      try {
+        await api(`/api/tickets/${ticketId}/comments`, {
+          method: "POST",
+          body: { body: textarea.value },
+        });
+        await loadComments(ticketId);
+      } catch (err) {
+        setCommentsError(ticketId, err.message);
+        renderBoard();
+      }
+    });
+    thread.append(form);
+  }
+  return thread;
+}
 
 async function move(id, direction) {
   try {
@@ -118,7 +266,7 @@ function renderBoard() {
       section.append(body);
       return section;
     }
-    const rows = tickets.map((t) => {
+    const rows = tickets.flatMap((t) => {
       const cell = document.createElement("td");
       cell.className = "actions";
       cell.append(
@@ -128,7 +276,30 @@ function renderBoard() {
         " ",
         moveButton("↓", "Move down", i < ticketLists.length - 1, () => move(t.id, "down")),
       );
-      return ticketRow(t, cell);
+      const comments = commentActionButton(
+        openComments.has(t.id)
+          ? "Hide comments"
+          : `Comments${commentsByTicket.has(t.id) ? ` (${commentsByTicket.get(t.id).length})` : ""}`,
+        () => {
+          if (openComments.has(t.id)) {
+            openComments.delete(t.id);
+          } else {
+            openComments.add(t.id);
+            if (!commentsByTicket.has(t.id)) void loadComments(t.id);
+          }
+          renderBoard();
+        },
+      );
+      cell.append(" ", comments);
+      const row = ticketRow(t, cell);
+      if (!openComments.has(t.id)) return [row];
+      const commentsRow = document.createElement("tr");
+      commentsRow.className = "comments-row";
+      const commentsCell = document.createElement("td");
+      commentsCell.colSpan = 6;
+      commentsCell.append(renderComments(t.id));
+      commentsRow.append(commentsCell);
+      return [row, commentsRow];
     });
     body.append(ticketTable(rows, true));
     section.append(body);

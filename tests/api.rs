@@ -593,6 +593,195 @@ async fn tickets_lifecycle() {
 }
 
 #[tokio::test]
+async fn ticket_comments_enforce_ownership_and_soft_delete() {
+    let app = setup().await;
+    let admin = admin_token(&app).await;
+
+    let (s, ticket) = call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&admin),
+        Some(json!({"title": "Commentable ticket"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let ticket_id = ticket["id"].as_i64().unwrap();
+    let comments_uri = format!("/api/tickets/{ticket_id}/comments");
+
+    assert_eq!(
+        call(&app, "GET", &comments_uri, None, None).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        call(&app, "GET", "/api/tickets/999/comments", Some(&admin), None,)
+            .await
+            .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &comments_uri,
+            Some(&admin),
+            Some(json!({"body": "  "})),
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+
+    let (s, admin_comment) = call(
+        &app,
+        "POST",
+        &comments_uri,
+        Some(&admin),
+        Some(json!({"body": "Admin comment"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(admin_comment["body"], "Admin comment");
+    let admin_comment_id = admin_comment["id"].as_i64().unwrap();
+
+    let (s, bob) = call(
+        &app,
+        "POST",
+        "/api/users",
+        Some(&admin),
+        Some(json!({
+            "email": "bob@example.com",
+            "password": "bobs-long-password",
+            "display_name": "Bob"
+        })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let bob_token = login(&app, "bob@example.com", "bobs-long-password").await.1["access_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    assert_eq!(
+        call(
+            &app,
+            "PATCH",
+            &format!("{comments_uri}/{admin_comment_id}"),
+            Some(&bob_token),
+            Some(json!({"body": "Hijacked"})),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("{comments_uri}/{admin_comment_id}"),
+            Some(&bob_token),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+
+    let (s, bob_comment) = call(
+        &app,
+        "POST",
+        &comments_uri,
+        Some(&bob_token),
+        Some(json!({"body": "Bob's comment"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(bob_comment["author_name"], "Bob");
+    let bob_comment_id = bob_comment["id"].as_i64().unwrap();
+
+    let (s, updated) = call(
+        &app,
+        "PATCH",
+        &format!("{comments_uri}/{bob_comment_id}"),
+        Some(&bob_token),
+        Some(json!({"body": "Bob edited this"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(updated["body"], "Bob edited this");
+
+    let (s, admin_updated) = call(
+        &app,
+        "PATCH",
+        &format!("{comments_uri}/{bob_comment_id}"),
+        Some(&admin),
+        Some(json!({"body": "Admin edited Bob's comment"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(admin_updated["body"], "Admin edited Bob's comment");
+
+    let (_, bob_second_comment) = call(
+        &app,
+        "POST",
+        &comments_uri,
+        Some(&bob_token),
+        Some(json!({"body": "Another comment from Bob"})),
+    )
+    .await;
+    let bob_second_comment_id = bob_second_comment["id"].as_i64().unwrap();
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("{comments_uri}/{bob_second_comment_id}"),
+            Some(&admin),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("{comments_uri}/{bob_comment_id}"),
+            Some(&bob_token),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let (s, comments) = call(&app, "GET", &comments_uri, Some(&admin), None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(comments.as_array().unwrap().len(), 3);
+    let deleted = comments
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|comment| comment["id"] == bob_comment_id)
+        .unwrap();
+    assert!(deleted["body"].is_null());
+    assert!(deleted["deleted_at"].is_string());
+    assert_eq!(
+        call(
+            &app,
+            "PATCH",
+            &format!("{comments_uri}/{bob_comment_id}"),
+            Some(&admin),
+            Some(json!({"body": "Restore"})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(bob["is_admin"], false);
+}
+
+#[tokio::test]
 async fn ticket_links_add_remove_and_history() {
     let app = setup().await;
     let t = admin_token(&app).await;
