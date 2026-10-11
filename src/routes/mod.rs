@@ -6,6 +6,7 @@ use axum::{
 use crate::{AppState, error::AppError};
 
 pub mod auth;
+pub mod tags;
 pub mod tickets;
 pub mod users;
 
@@ -18,6 +19,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/users", get(users::list).post(users::create))
         .route("/users/{id}", get(users::get_one).patch(users::update))
         .route("/users/assignable", get(tickets::assignable_users))
+        .route("/tags", get(tags::list).post(tags::create))
         .route("/tickets", get(tickets::list).post(tickets::create))
         .route("/tickets/archived", get(tickets::list_archived))
         .route("/tickets/removed", get(tickets::list_removed))
@@ -31,5 +33,7 @@ pub fn api_router() -> Router<AppState> {
             "/tickets/{id}/links/{link_id}",
             delete(tickets::remove_link),
         )
+        .route("/tickets/{id}/tags", post(tickets::add_tag))
+        .route("/tickets/{id}/tags/{tag_id}", delete(tickets::remove_tag))
         .fallback(|| async { AppError::NotFound })
 }

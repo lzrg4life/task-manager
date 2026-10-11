@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     Json,
     extract::{Path, Query, State},
@@ -10,6 +12,7 @@ use crate::{
     AppState,
     auth::AuthUser,
     error::{AppError, AppResult},
+    models::TagOut,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +106,7 @@ pub struct TicketSummary {
     priority: Priority,
     reviewer: Option<UserRef>,
     implementer: Option<UserRef>,
+    tags: Vec<TagOut>,
 }
 
 #[derive(Serialize)]
@@ -183,6 +187,14 @@ struct LinkRow {
     created_at: String,
 }
 
+#[derive(FromRow)]
+struct TicketTagRow {
+    ticket_id: i64,
+    id: i64,
+    name: String,
+    description: String,
+}
+
 const SELECT_TICKET: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
     t.technical_requirements, t.implementation_notes, t.status, t.priority, t.created_at, \
     t.updated_at, t.created_by, cb.email AS cb_email, cb.display_name AS cb_name, \
@@ -208,7 +220,7 @@ fn optional_ref(id: Option<i64>, email: Option<String>, name: Option<String>) ->
     }
 }
 
-fn summary_of(r: &TicketRow) -> AppResult<TicketSummary> {
+fn summary_of(r: &TicketRow, tags: Vec<TagOut>) -> AppResult<TicketSummary> {
     Ok(TicketSummary {
         id: r.id,
         key: format!("TM-{}", r.id),
@@ -217,7 +229,47 @@ fn summary_of(r: &TicketRow) -> AppResult<TicketSummary> {
         priority: Priority::parse(&r.priority)?,
         reviewer: optional_ref(r.reviewer_id, r.rv_email.clone(), r.rv_name.clone()),
         implementer: optional_ref(r.implementer_id, r.im_email.clone(), r.im_name.clone()),
+        tags,
     })
+}
+
+async fn load_ticket_tags(
+    pool: &SqlitePool,
+    ticket_ids: &[i64],
+) -> AppResult<HashMap<i64, Vec<TagOut>>> {
+    let mut tags_by_ticket = HashMap::new();
+    if ticket_ids.is_empty() {
+        return Ok(tags_by_ticket);
+    }
+    let placeholders = vec!["?"; ticket_ids.len()].join(", ");
+    let sql = format!(
+        "SELECT tt.ticket_id, t.id, t.name, t.description FROM ticket_tags tt \
+         JOIN tags t ON t.id = tt.tag_id WHERE tt.ticket_id IN ({placeholders}) \
+         ORDER BY t.name COLLATE NOCASE, t.id"
+    );
+    let mut query = sqlx::query_as::<_, TicketTagRow>(&sql);
+    for id in ticket_ids {
+        query = query.bind(id);
+    }
+    for row in query.fetch_all(pool).await? {
+        tags_by_ticket
+            .entry(row.ticket_id)
+            .or_insert_with(Vec::new)
+            .push(TagOut {
+                id: row.id,
+                name: row.name,
+                description: row.description,
+            });
+    }
+    Ok(tags_by_ticket)
+}
+
+async fn summaries_of(pool: &SqlitePool, rows: Vec<TicketRow>) -> AppResult<Vec<TicketSummary>> {
+    let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let mut tags_by_ticket = load_ticket_tags(pool, &ids).await?;
+    rows.iter()
+        .map(|row| summary_of(row, tags_by_ticket.remove(&row.id).unwrap_or_default()))
+        .collect()
 }
 
 async fn fetch_row(pool: &SqlitePool, id: i64) -> AppResult<TicketRow> {
@@ -230,6 +282,10 @@ async fn fetch_row(pool: &SqlitePool, id: i64) -> AppResult<TicketRow> {
 
 async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
     let r = fetch_row(pool, id).await?;
+    let tags = load_ticket_tags(pool, &[id])
+        .await?
+        .remove(&id)
+        .unwrap_or_default();
     let history = sqlx::query_as::<_, HistoryRow>(
         "SELECT h.field, h.old_value, h.new_value, h.changed_by, u.email AS u_email, \
          u.display_name AS u_name, h.changed_at FROM ticket_history h \
@@ -265,7 +321,7 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
     })
     .collect();
     Ok(TicketOut {
-        summary: summary_of(&r)?,
+        summary: summary_of(&r, tags)?,
         details: r.details,
         business_requirements: r.business_requirements,
         technical_requirements: r.technical_requirements,
@@ -279,13 +335,13 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
 }
 
 async fn list_by_status(pool: &SqlitePool, status: Status) -> AppResult<Vec<TicketSummary>> {
-    sqlx::query_as::<_, TicketRow>(&format!("{SELECT_TICKET} WHERE t.status = ? ORDER BY t.id"))
-        .bind(status.as_str())
-        .fetch_all(pool)
-        .await?
-        .iter()
-        .map(summary_of)
-        .collect()
+    let rows = sqlx::query_as::<_, TicketRow>(&format!(
+        "{SELECT_TICKET} WHERE t.status = ? ORDER BY t.id"
+    ))
+    .bind(status.as_str())
+    .fetch_all(pool)
+    .await?;
+    summaries_of(pool, rows).await
 }
 
 #[derive(Serialize)]
@@ -314,6 +370,7 @@ pub struct PageQuery {
     per_page: Option<i64>,
     search: Option<String>,
     assignee_id: Option<i64>,
+    tag_ids: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -328,42 +385,75 @@ async fn paged(pool: &SqlitePool, status: Status, q: PageQuery) -> AppResult<Jso
     let page = q.page.unwrap_or(1).max(1);
     let per_page = q.per_page.unwrap_or(25).clamp(1, 100);
     let search = q.search.as_deref().unwrap_or("").trim();
-    let total: i64 = sqlx::query_scalar(
+    let raw_tag_ids = q.tag_ids.as_deref().unwrap_or("");
+    let mut tag_ids = if raw_tag_ids.is_empty() {
+        Vec::new()
+    } else {
+        raw_tag_ids
+            .split(',')
+            .map(|id| {
+                id.parse::<i64>()
+                    .map_err(|_| AppError::BadRequest("tag_ids must be comma-separated IDs".into()))
+            })
+            .collect::<AppResult<Vec<_>>>()?
+    };
+    if tag_ids.iter().any(|id| *id < 1) {
+        return Err(AppError::BadRequest(
+            "tag_ids must contain positive IDs".into(),
+        ));
+    }
+    tag_ids.sort_unstable();
+    tag_ids.dedup();
+    if tag_ids.len() > 50 {
+        return Err(AppError::BadRequest(
+            "at most 50 tags can be selected".into(),
+        ));
+    }
+    let tag_filter = " AND EXISTS (SELECT 1 FROM ticket_tags tt \
+        WHERE tt.ticket_id = t.id AND tt.tag_id = ?)"
+        .repeat(tag_ids.len());
+    let count_sql = format!(
         "SELECT COUNT(*) FROM tickets t WHERE t.status = ? \
          AND (? = '' OR instr(lower('TM-' || t.id), lower(?)) > 0 \
               OR instr(lower(t.title), lower(?)) > 0) \
-         AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?)",
-    )
-    .bind(status.as_str())
-    .bind(search)
-    .bind(search)
-    .bind(search)
-    .bind(q.assignee_id)
-    .bind(q.assignee_id)
-    .bind(q.assignee_id)
-    .fetch_one(pool)
-    .await?;
-    let items = sqlx::query_as::<_, TicketRow>(&format!(
+         AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?){tag_filter}"
+    );
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql)
+        .bind(status.as_str())
+        .bind(search)
+        .bind(search)
+        .bind(search)
+        .bind(q.assignee_id)
+        .bind(q.assignee_id)
+        .bind(q.assignee_id);
+    for id in &tag_ids {
+        count_query = count_query.bind(*id);
+    }
+    let total = count_query.fetch_one(pool).await?;
+    let page_sql = format!(
         "{SELECT_TICKET} WHERE t.status = ? \
          AND (? = '' OR instr(lower('TM-' || t.id), lower(?)) > 0 \
               OR instr(lower(t.title), lower(?)) > 0) \
          AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?) \
-         ORDER BY t.id LIMIT ? OFFSET ?"
-    ))
-    .bind(status.as_str())
-    .bind(search)
-    .bind(search)
-    .bind(search)
-    .bind(q.assignee_id)
-    .bind(q.assignee_id)
-    .bind(q.assignee_id)
-    .bind(per_page)
-    .bind((page - 1).saturating_mul(per_page))
-    .fetch_all(pool)
-    .await?
-    .iter()
-    .map(summary_of)
-    .collect::<AppResult<Vec<_>>>()?;
+         {tag_filter} ORDER BY t.id LIMIT ? OFFSET ?"
+    );
+    let mut items_query = sqlx::query_as::<_, TicketRow>(&page_sql)
+        .bind(status.as_str())
+        .bind(search)
+        .bind(search)
+        .bind(search)
+        .bind(q.assignee_id)
+        .bind(q.assignee_id)
+        .bind(q.assignee_id);
+    for id in &tag_ids {
+        items_query = items_query.bind(*id);
+    }
+    let rows = items_query
+        .bind(per_page)
+        .bind((page - 1).saturating_mul(per_page))
+        .fetch_all(pool)
+        .await?;
+    let items = summaries_of(pool, rows).await?;
     Ok(Json(Page {
         items,
         page,
@@ -823,6 +913,62 @@ pub async fn remove_link(
             .await?
             .ok_or(AppError::NotFound)?;
     record_history(&mut tx, id, "link_removed", Some(&url), None, user.id).await?;
+    touch(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(Json(fetch_ticket(&state.pool, id).await?))
+}
+
+#[derive(Deserialize)]
+pub struct AddTag {
+    tag_id: i64,
+}
+
+pub async fn add_tag(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Path(id): Path<i64>,
+    Json(req): Json<AddTag>,
+) -> AppResult<Json<TicketOut>> {
+    fetch_row(&state.pool, id).await?;
+    let tag_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?)")
+        .bind(req.tag_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !tag_exists {
+        return Err(AppError::NotFound);
+    }
+    let mut tx = state.pool.begin().await?;
+    let inserted = sqlx::query(
+        "INSERT INTO ticket_tags (ticket_id, tag_id) VALUES (?, ?) \
+         ON CONFLICT(ticket_id, tag_id) DO NOTHING",
+    )
+    .bind(id)
+    .bind(req.tag_id)
+    .execute(&mut *tx)
+    .await?;
+    if inserted.rows_affected() > 0 {
+        touch(&mut tx, id).await?;
+    }
+    tx.commit().await?;
+    Ok(Json(fetch_ticket(&state.pool, id).await?))
+}
+
+pub async fn remove_tag(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Path((id, tag_id)): Path<(i64, i64)>,
+) -> AppResult<Json<TicketOut>> {
+    fetch_row(&state.pool, id).await?;
+    let mut tx = state.pool.begin().await?;
+    let removed = sqlx::query("DELETE FROM ticket_tags WHERE ticket_id = ? AND tag_id = ?")
+        .bind(id)
+        .bind(tag_id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if removed == 0 {
+        return Err(AppError::NotFound);
+    }
     touch(&mut tx, id).await?;
     tx.commit().await?;
     Ok(Json(fetch_ticket(&state.pool, id).await?))

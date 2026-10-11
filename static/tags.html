@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tags – Task Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <main class="card">
+    <section class="list">
+      <div class="title-bar"><h2>Tags</h2></div>
+      <table>
+        <thead><tr><th>Name</th><th>Description</th></tr></thead>
+        <tbody id="tag-rows"></tbody>
+      </table>
+    </section>
+    <section class="list">
+      <div class="title-bar"><h2>Create tag</h2></div>
+      <form id="tag-form" class="tag-form">
+        <label>Name <input type="text" name="name" maxlength="40" required></label>
+        <label>Description <input type="text" name="description" maxlength="500"></label>
+        <p id="error" class="error" role="alert" hidden></p>
+        <button type="submit">Create tag</button>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="/js/tags.js"></script>
+</body>
+</html>

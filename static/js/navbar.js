@@ -33,6 +33,11 @@ function createNavbar(me) {
       label: "Users",
       paths: ["/users.html"],
     }));
+    navigation.append(" · ", createLink({
+      href: "/tags.html",
+      label: "Tags",
+      paths: ["/tags.html"],
+    }));
   }
 
   const account = document.createElement("span");

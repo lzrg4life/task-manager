@@ -5,6 +5,7 @@ await initPage();
 const board = document.getElementById("board");
 const ticketSearch = document.getElementById("ticket-search");
 const ticketAssignee = document.getElementById("ticket-assignee");
+const ticketTags = document.getElementById("ticket-tags");
 const ticketFilters = document.getElementById("ticket-filters");
 const filterToggle = document.getElementById("toggle-filters");
 const archiveDialog = document.getElementById("archive-dialog");
@@ -14,6 +15,7 @@ const archiveConfirm = document.getElementById("archive-confirm");
 let ticketToArchive = null;
 let ticketLists = [];
 let assigneesLoaded = false;
+let tagsLoaded = false;
 
 async function move(id, direction) {
   try {
@@ -67,6 +69,7 @@ document.getElementById("archive-cancel").addEventListener("click", () => {
 archiveConfirm.addEventListener("click", archiveTicket);
 ticketSearch.addEventListener("input", renderBoard);
 ticketAssignee.addEventListener("change", renderBoard);
+ticketTags.addEventListener("change", renderBoard);
 filterToggle.addEventListener("click", () => {
   ticketFilters.hidden = !ticketFilters.hidden;
   filterToggle.setAttribute("aria-expanded", String(!ticketFilters.hidden));
@@ -76,6 +79,7 @@ filterToggle.addEventListener("click", () => {
 function renderBoard() {
   const search = ticketSearch.value.trim().toLocaleLowerCase();
   const assigneeId = ticketAssignee.value;
+  const tagIds = [...ticketTags.selectedOptions].map((option) => option.value);
   board.replaceChildren(...ticketLists.map((list, i) => {
     const section = document.createElement("section");
     section.className = "list";
@@ -86,7 +90,9 @@ function renderBoard() {
       const matchesAssignee = !assigneeId
         || String(ticket.reviewer?.id) === assigneeId
         || String(ticket.implementer?.id) === assigneeId;
-      return matchesSearch && matchesAssignee;
+      const matchesTags = tagIds.every((id) =>
+        ticket.tags.some((tag) => String(tag.id) === id));
+      return matchesSearch && matchesAssignee && matchesTags;
     });
     const header = document.createElement("button");
     header.type = "button";
@@ -143,6 +149,17 @@ async function load() {
         ticketAssignee.append(option);
       }
       assigneesLoaded = true;
+    }
+    if (!tagsLoaded) {
+      const tags = await api("/api/tags");
+      ticketTags.replaceChildren(...tags.map((tag) => {
+        const option = document.createElement("option");
+        option.value = String(tag.id);
+        option.textContent = tag.name;
+        option.title = tag.description;
+        return option;
+      }));
+      tagsLoaded = true;
     }
     ticketLists = await api("/api/tickets");
     renderBoard();

@@ -32,7 +32,15 @@ export function ticketRow(t, extra) {
   link.textContent = t.key;
   const idCell = document.createElement("td");
   idCell.append(link);
-  tr.append(idCell, td(t.title), td(PRIORITY_LABELS[t.priority]),
+  const titleCell = td(t.title);
+  for (const tag of t.tags || []) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = tag.name;
+    badge.title = tag.description;
+    titleCell.append(" ", badge);
+  }
+  tr.append(idCell, titleCell, td(PRIORITY_LABELS[t.priority]),
     td(userName(t.reviewer)), td(userName(t.implementer)));
   if (extra) tr.append(extra);
   return tr;

@@ -16,6 +16,7 @@ function fillOptions(select, entries) {
 }
 
 const users = await api("/api/users/assignable");
+const availableTags = await api("/api/tags");
 const userOptions = [["", "Unassigned"], ...users.map((u) => [String(u.id), u.display_name || u.email])];
 fillOptions(form.elements.status, Object.entries(STATUS_LABELS));
 fillOptions(form.elements.priority, Object.entries(PRIORITY_LABELS));
@@ -68,6 +69,39 @@ function renderLinks(t) {
   }));
 }
 
+function renderTags(t) {
+  const section = document.getElementById("tags-section");
+  const list = document.getElementById("tags");
+  const noTags = document.getElementById("no-tags");
+  section.hidden = false;
+  noTags.hidden = availableTags.length > 0;
+  list.replaceChildren(...availableTags.map((tag) => {
+    const label = document.createElement("label");
+    label.className = "inline";
+    label.title = tag.description;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = t.tags.some((assigned) => assigned.id === tag.id);
+    checkbox.addEventListener("change", async () => {
+      checkbox.disabled = true;
+      try {
+        const ticketPath = `/api/tickets/${encodeURIComponent(id)}/tags`;
+        const updated = checkbox.checked
+          ? await api(ticketPath, { method: "POST", body: { tag_id: tag.id } })
+          : await api(`${ticketPath}/${tag.id}`, { method: "DELETE" });
+        render(updated);
+        show("");
+      } catch (err) {
+        checkbox.checked = !checkbox.checked;
+        checkbox.disabled = false;
+        show(err.message);
+      }
+    });
+    label.append(checkbox, document.createTextNode(` ${tag.name}`));
+    return label;
+  }));
+}
+
 linkForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const body = { url: linkForm.elements.url.value, label: linkForm.elements.label.value };
@@ -96,6 +130,7 @@ function render(t) {
   document.getElementById("meta").textContent =
     `Created by ${t.created_by.name} on ${t.created_at}. Last updated ${t.updated_at}.`;
   renderLinks(t);
+  renderTags(t);
   document.getElementById("history-section").hidden = false;
   document.getElementById("history").replaceChildren(...t.history.map((h) => {
     const tr = document.createElement("tr");

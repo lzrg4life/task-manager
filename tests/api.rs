@@ -350,6 +350,12 @@ async fn static_files_and_api_404() {
         .await
         .unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+    let tags_page = app
+        .clone()
+        .oneshot(Request::get("/tags.html").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(tags_page.status(), StatusCode::OK);
     let (s, body) = call(&app, "GET", "/api/does-not-exist", None, None).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     assert!(body["error"].is_string());
@@ -635,6 +641,7 @@ async fn ticket_links_add_remove_and_history() {
         let (s, _) = call(&app, "POST", uri, Some(&t), Some(json!({"url": bad}))).await;
         assert_eq!(s, StatusCode::BAD_REQUEST, "{bad}");
     }
+
     let (s, _) = call(
         &app,
         "POST",
@@ -685,4 +692,238 @@ async fn ticket_links_add_remove_and_history() {
     let id = r["links"][0]["id"].as_i64().unwrap();
     let (s, _) = call(&app, "DELETE", &format!("{uri}/{id}"), Some(&t), None).await;
     assert_eq!(s, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn admins_manage_tags_and_users_tag_and_filter_tickets() {
+    let app = setup().await;
+    let admin = admin_token(&app).await;
+    let (s, _) = call(
+        &app,
+        "POST",
+        "/api/users",
+        Some(&admin),
+        Some(json!({
+            "email": "bob@example.com",
+            "password": "bobs-long-password",
+            "display_name": "Bob"
+        })),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let (_, bob_login) = login(&app, "bob@example.com", "bobs-long-password").await;
+    let bob = bob_login["access_token"].as_str().unwrap();
+    assert_eq!(
+        call(&app, "GET", "/api/tags", None, None).await.0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    let (s, backend) = call(
+        &app,
+        "POST",
+        "/api/tags",
+        Some(&admin),
+        Some(json!({"name": " Backend ", "description": "Server-side work"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(backend["name"], "Backend");
+    assert_eq!(backend["description"], "Server-side work");
+    let backend_id = backend["id"].as_i64().unwrap();
+
+    let (s, urgent) = call(
+        &app,
+        "POST",
+        "/api/tags",
+        Some(&admin),
+        Some(json!({"name": "Urgent"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    let urgent_id = urgent["id"].as_i64().unwrap();
+
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tags",
+            Some(bob),
+            Some(json!({"name": "Unauthorized"})),
+        )
+        .await
+        .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tags",
+            Some(&admin),
+            Some(json!({"name": "backend"})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tags",
+            Some(&admin),
+            Some(json!({"name": "  "})),
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (s, tag_list) = call(&app, "GET", "/api/tags", Some(bob), None).await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(tag_list.as_array().unwrap().len(), 2);
+
+    for (title, status) in [
+        ("Archived match", "archived"),
+        ("Removed match", "removed"),
+        ("Active match", "active"),
+    ] {
+        let (s, _) = call(
+            &app,
+            "POST",
+            "/api/tickets",
+            Some(&admin),
+            Some(json!({"title": title, "status": status})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+    }
+    let (s, archived) = call(
+        &app,
+        "POST",
+        "/api/tickets/1/tags",
+        Some(bob),
+        Some(json!({"tag_id": backend_id})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(archived["tags"][0]["name"], "Backend");
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/1/tags",
+            Some(bob),
+            Some(json!({"tag_id": urgent_id})),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/2/tags",
+            Some(bob),
+            Some(json!({"tag_id": backend_id})),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/3/tags",
+            Some(bob),
+            Some(json!({"tag_id": urgent_id})),
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, active) = call(
+        &app,
+        "POST",
+        "/api/tickets/3/tags",
+        Some(bob),
+        Some(json!({"tag_id": backend_id})),
+    )
+    .await;
+    assert_eq!(active["tags"].as_array().unwrap().len(), 2);
+
+    let (s, both_archived) = call(
+        &app,
+        "GET",
+        &format!("/api/tickets/archived?tag_ids={backend_id},{urgent_id}"),
+        Some(bob),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK, "{both_archived}");
+    assert_eq!(both_archived["total"], 1);
+    assert_eq!(
+        both_archived["items"][0]["tags"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            "/api/tickets/archived?tag_ids=0",
+            Some(bob),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    let (_, no_match) = call(
+        &app,
+        "GET",
+        &format!("/api/tickets/removed?tag_ids={urgent_id}"),
+        Some(bob),
+        None,
+    )
+    .await;
+    assert_eq!(no_match["total"], 0);
+    let (_, removed) = call(
+        &app,
+        "GET",
+        &format!("/api/tickets/removed?tag_ids={backend_id}"),
+        Some(bob),
+        None,
+    )
+    .await;
+    assert_eq!(removed["total"], 1);
+    let (_, board) = call(&app, "GET", "/api/tickets", Some(bob), None).await;
+    assert_eq!(board[2]["tickets"][0]["tags"].as_array().unwrap().len(), 2);
+
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/tickets/1/tags/{urgent_id}"),
+            Some(bob),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, updated) = call(&app, "GET", "/api/tickets/1", Some(bob), None).await;
+    assert_eq!(updated["tags"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/1/tags",
+            None,
+            Some(json!({"tag_id": backend_id})),
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
 }

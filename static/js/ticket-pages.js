@@ -6,12 +6,15 @@ const container = document.getElementById("list");
 const kind = container.dataset.kind;
 const ticketSearch = document.getElementById("ticket-search");
 const ticketAssignee = document.getElementById("ticket-assignee");
+const ticketTags = document.getElementById("ticket-tags");
 const ticketFilters = document.getElementById("ticket-filters");
 const filterToggle = document.getElementById("toggle-filters");
 let page = 1;
 let requestId = 0;
 let assigneesLoaded = false;
 let assigneesPromise;
+let tagsLoaded = false;
+let tagsPromise;
 let searchTimeout;
 
 ticketSearch.addEventListener("input", () => {
@@ -22,6 +25,10 @@ ticketSearch.addEventListener("input", () => {
   }, 200);
 });
 ticketAssignee.addEventListener("change", () => {
+  page = 1;
+  load();
+});
+ticketTags.addEventListener("change", () => {
   page = 1;
   load();
 });
@@ -54,10 +61,31 @@ async function load() {
       await assigneesPromise;
       if (currentRequest !== requestId) return;
     }
+    if (!tagsLoaded) {
+      tagsPromise ??= api("/api/tags")
+        .then((tags) => {
+          ticketTags.replaceChildren(...tags.map((tag) => {
+            const option = document.createElement("option");
+            option.value = String(tag.id);
+            option.textContent = tag.name;
+            option.title = tag.description;
+            return option;
+          }));
+          tagsLoaded = true;
+        })
+        .catch((err) => {
+          tagsPromise = undefined;
+          throw err;
+        });
+      await tagsPromise;
+      if (currentRequest !== requestId) return;
+    }
     const params = new URLSearchParams({ page: String(page), per_page: "25" });
     const search = ticketSearch.value.trim();
     if (search) params.set("search", search);
     if (ticketAssignee.value) params.set("assignee_id", ticketAssignee.value);
+    const tagIds = [...ticketTags.selectedOptions].map((option) => option.value);
+    if (tagIds.length) params.set("tag_ids", tagIds.join(","));
     const data = await api(`/api/tickets/${kind}?${params}`);
     if (currentRequest !== requestId) return;
     const pages = Math.max(1, Math.ceil(data.total / data.per_page));

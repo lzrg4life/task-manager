@@ -13,6 +13,35 @@ pub struct UserOut {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct TagOut {
+    pub id: i64,
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(FromRow)]
+struct TagRow {
+    id: i64,
+    name: String,
+    description: String,
+}
+
+pub async fn list_tags(pool: &SqlitePool) -> AppResult<Vec<TagOut>> {
+    Ok(sqlx::query_as::<_, TagRow>(
+        "SELECT id, name, description FROM tags ORDER BY name COLLATE NOCASE, id",
+    )
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|row| TagOut {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+    })
+    .collect())
+}
+
 #[derive(FromRow)]
 struct UserRow {
     id: i64,
