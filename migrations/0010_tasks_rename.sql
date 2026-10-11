@@ -1,0 +1,21 @@
+ALTER TABLE tickets RENAME TO tasks;
+ALTER TABLE ticket_history RENAME TO task_history;
+ALTER TABLE task_history RENAME COLUMN ticket_id TO task_id;
+ALTER TABLE ticket_links RENAME TO task_links;
+ALTER TABLE task_links RENAME COLUMN ticket_id TO task_id;
+ALTER TABLE ticket_relations RENAME TO task_relations;
+ALTER TABLE task_relations RENAME COLUMN ticket_id TO task_id;
+ALTER TABLE task_relations RENAME COLUMN related_ticket_id TO related_task_id;
+ALTER TABLE ticket_comments RENAME TO task_comments;
+ALTER TABLE task_comments RENAME COLUMN ticket_id TO task_id;
+ALTER TABLE ticket_tags RENAME TO task_tags;
+ALTER TABLE task_tags RENAME COLUMN ticket_id TO task_id;
+
+DROP INDEX idx_tickets_status;
+CREATE INDEX idx_tasks_status ON tasks(status, id);
+DROP INDEX idx_ticket_history_ticket;
+CREATE INDEX idx_task_history_task ON task_history(task_id, id);
+DROP INDEX idx_ticket_tags_tag;
+CREATE INDEX idx_task_tags_tag ON task_tags(tag_id, task_id);
+DROP INDEX idx_ticket_comments_ticket;
+CREATE INDEX idx_task_comments_task ON task_comments(task_id, id);

@@ -98,7 +98,7 @@ pub struct UserRef {
 }
 
 #[derive(Serialize)]
-pub struct TicketSummary {
+pub struct TaskSummary {
     id: i64,
     key: String,
     title: String,
@@ -130,9 +130,9 @@ pub struct LinkOut {
 }
 
 #[derive(Serialize)]
-pub struct TicketOut {
+pub struct TaskOut {
     #[serde(flatten)]
-    summary: TicketSummary,
+    summary: TaskSummary,
     details: String,
     business_requirements: String,
     technical_requirements: String,
@@ -141,12 +141,12 @@ pub struct TicketOut {
     created_at: String,
     updated_at: String,
     links: Vec<LinkOut>,
-    related_tickets: Vec<TicketSummary>,
+    related_tasks: Vec<TaskSummary>,
     history: Vec<HistoryEntry>,
 }
 
 #[derive(FromRow)]
-struct TicketRow {
+struct TaskRow {
     id: i64,
     title: String,
     details: String,
@@ -192,20 +192,20 @@ struct LinkRow {
 }
 
 #[derive(FromRow)]
-struct TicketTagRow {
-    ticket_id: i64,
+struct TaskTagRow {
+    task_id: i64,
     id: i64,
     name: String,
     description: String,
     archived: bool,
 }
 
-const SELECT_TICKET: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
+const SELECT_TASK: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
     t.technical_requirements, t.implementation_notes, t.status, t.priority, t.blocked_reason, t.created_at, \
     t.updated_at, t.created_by, cb.email AS cb_email, cb.display_name AS cb_name, \
     t.reviewer_id, rv.email AS rv_email, rv.display_name AS rv_name, \
     t.implementer_id, im.email AS im_email, im.display_name AS im_name \
-    FROM tickets t JOIN users cb ON cb.id = t.created_by \
+    FROM tasks t JOIN users cb ON cb.id = t.created_by \
     LEFT JOIN users rv ON rv.id = t.reviewer_id \
     LEFT JOIN users im ON im.id = t.implementer_id";
 
@@ -225,8 +225,8 @@ fn optional_ref(id: Option<i64>, email: Option<String>, name: Option<String>) ->
     }
 }
 
-fn summary_of(r: &TicketRow, tags: Vec<TagOut>) -> AppResult<TicketSummary> {
-    Ok(TicketSummary {
+fn summary_of(r: &TaskRow, tags: Vec<TagOut>) -> AppResult<TaskSummary> {
+    Ok(TaskSummary {
         id: r.id,
         key: format!("TM-{}", r.id),
         title: r.title.clone(),
@@ -240,27 +240,27 @@ fn summary_of(r: &TicketRow, tags: Vec<TagOut>) -> AppResult<TicketSummary> {
     })
 }
 
-async fn load_ticket_tags(
+async fn load_task_tags(
     pool: &SqlitePool,
-    ticket_ids: &[i64],
+    task_ids: &[i64],
 ) -> AppResult<HashMap<i64, Vec<TagOut>>> {
-    let mut tags_by_ticket = HashMap::new();
-    if ticket_ids.is_empty() {
-        return Ok(tags_by_ticket);
+    let mut tags_by_task = HashMap::new();
+    if task_ids.is_empty() {
+        return Ok(tags_by_task);
     }
-    let placeholders = vec!["?"; ticket_ids.len()].join(", ");
+    let placeholders = vec!["?"; task_ids.len()].join(", ");
     let sql = format!(
-        "SELECT tt.ticket_id, t.id, t.name, t.description, t.archived FROM ticket_tags tt \
-         JOIN tags t ON t.id = tt.tag_id WHERE tt.ticket_id IN ({placeholders}) \
+        "SELECT tt.task_id, t.id, t.name, t.description, t.archived FROM task_tags tt \
+         JOIN tags t ON t.id = tt.tag_id WHERE tt.task_id IN ({placeholders}) \
          ORDER BY t.name COLLATE NOCASE, t.id"
     );
-    let mut query = sqlx::query_as::<_, TicketTagRow>(&sql);
-    for id in ticket_ids {
+    let mut query = sqlx::query_as::<_, TaskTagRow>(&sql);
+    for id in task_ids {
         query = query.bind(id);
     }
     for row in query.fetch_all(pool).await? {
-        tags_by_ticket
-            .entry(row.ticket_id)
+        tags_by_task
+            .entry(row.task_id)
             .or_insert_with(Vec::new)
             .push(TagOut {
                 id: row.id,
@@ -269,35 +269,35 @@ async fn load_ticket_tags(
                 archived: row.archived,
             });
     }
-    Ok(tags_by_ticket)
+    Ok(tags_by_task)
 }
 
-async fn summaries_of(pool: &SqlitePool, rows: Vec<TicketRow>) -> AppResult<Vec<TicketSummary>> {
+async fn summaries_of(pool: &SqlitePool, rows: Vec<TaskRow>) -> AppResult<Vec<TaskSummary>> {
     let ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
-    let mut tags_by_ticket = load_ticket_tags(pool, &ids).await?;
+    let mut tags_by_task = load_task_tags(pool, &ids).await?;
     rows.iter()
-        .map(|row| summary_of(row, tags_by_ticket.remove(&row.id).unwrap_or_default()))
+        .map(|row| summary_of(row, tags_by_task.remove(&row.id).unwrap_or_default()))
         .collect()
 }
 
-async fn fetch_row(pool: &SqlitePool, id: i64) -> AppResult<TicketRow> {
-    sqlx::query_as::<_, TicketRow>(&format!("{SELECT_TICKET} WHERE t.id = ?"))
+async fn fetch_row(pool: &SqlitePool, id: i64) -> AppResult<TaskRow> {
+    sqlx::query_as::<_, TaskRow>(&format!("{SELECT_TASK} WHERE t.id = ?"))
         .bind(id)
         .fetch_optional(pool)
         .await?
         .ok_or(AppError::NotFound)
 }
 
-async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
+async fn fetch_task(pool: &SqlitePool, id: i64) -> AppResult<TaskOut> {
     let r = fetch_row(pool, id).await?;
-    let tags = load_ticket_tags(pool, &[id])
+    let tags = load_task_tags(pool, &[id])
         .await?
         .remove(&id)
         .unwrap_or_default();
     let history = sqlx::query_as::<_, HistoryRow>(
         "SELECT h.field, h.old_value, h.new_value, h.changed_by, u.email AS u_email, \
-         u.display_name AS u_name, h.changed_at FROM ticket_history h \
-         JOIN users u ON u.id = h.changed_by WHERE h.ticket_id = ? ORDER BY h.id",
+         u.display_name AS u_name, h.changed_at FROM task_history h \
+         JOIN users u ON u.id = h.changed_by WHERE h.task_id = ? ORDER BY h.id",
     )
     .bind(id)
     .fetch_all(pool)
@@ -313,8 +313,8 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
     .collect();
     let links = sqlx::query_as::<_, LinkRow>(
         "SELECT l.id, l.url, l.label, l.created_by, u.email AS u_email, \
-         u.display_name AS u_name, l.created_at FROM ticket_links l \
-         JOIN users u ON u.id = l.created_by WHERE l.ticket_id = ? ORDER BY l.id",
+         u.display_name AS u_name, l.created_at FROM task_links l \
+         JOIN users u ON u.id = l.created_by WHERE l.task_id = ? ORDER BY l.id",
     )
     .bind(id)
     .fetch_all(pool)
@@ -328,10 +328,10 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
         created_at: l.created_at,
     })
     .collect();
-    let related_rows = sqlx::query_as::<_, TicketRow>(&format!(
-        "{SELECT_TICKET} WHERE t.id IN ( \
-            SELECT CASE WHEN ticket_id = ? THEN related_ticket_id ELSE ticket_id END \
-            FROM ticket_relations WHERE ticket_id = ? OR related_ticket_id = ? \
+    let related_rows = sqlx::query_as::<_, TaskRow>(&format!(
+        "{SELECT_TASK} WHERE t.id IN ( \
+            SELECT CASE WHEN task_id = ? THEN related_task_id ELSE task_id END \
+            FROM task_relations WHERE task_id = ? OR related_task_id = ? \
          ) ORDER BY t.id"
     ))
     .bind(id)
@@ -339,8 +339,8 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
     .bind(id)
     .fetch_all(pool)
     .await?;
-    let related_tickets = summaries_of(pool, related_rows).await?;
-    Ok(TicketOut {
+    let related_tasks = summaries_of(pool, related_rows).await?;
+    Ok(TaskOut {
         summary: summary_of(&r, tags)?,
         details: r.details,
         business_requirements: r.business_requirements,
@@ -350,25 +350,24 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
         created_at: r.created_at,
         updated_at: r.updated_at,
         links,
-        related_tickets,
+        related_tasks,
         history,
     })
 }
 
-async fn list_by_status(pool: &SqlitePool, status: Status) -> AppResult<Vec<TicketSummary>> {
-    let rows = sqlx::query_as::<_, TicketRow>(&format!(
-        "{SELECT_TICKET} WHERE t.status = ? ORDER BY t.id"
-    ))
-    .bind(status.as_str())
-    .fetch_all(pool)
-    .await?;
+async fn list_by_status(pool: &SqlitePool, status: Status) -> AppResult<Vec<TaskSummary>> {
+    let rows =
+        sqlx::query_as::<_, TaskRow>(&format!("{SELECT_TASK} WHERE t.status = ? ORDER BY t.id"))
+            .bind(status.as_str())
+            .fetch_all(pool)
+            .await?;
     summaries_of(pool, rows).await
 }
 
 #[derive(Serialize)]
 pub struct BoardList {
     status: Status,
-    tickets: Vec<TicketSummary>,
+    tasks: Vec<TaskSummary>,
 }
 
 pub async fn list(
@@ -379,7 +378,7 @@ pub async fn list(
     for status in BOARD {
         out.push(BoardList {
             status,
-            tickets: list_by_status(&state.pool, status).await?,
+            tasks: list_by_status(&state.pool, status).await?,
         });
     }
     Ok(Json(out))
@@ -396,7 +395,7 @@ pub struct PageQuery {
 
 #[derive(Serialize)]
 pub struct Page {
-    items: Vec<TicketSummary>,
+    items: Vec<TaskSummary>,
     page: i64,
     per_page: i64,
     total: i64,
@@ -430,11 +429,11 @@ async fn paged(pool: &SqlitePool, status: Status, q: PageQuery) -> AppResult<Jso
             "at most 50 tags can be selected".into(),
         ));
     }
-    let tag_filter = " AND EXISTS (SELECT 1 FROM ticket_tags tt \
-        WHERE tt.ticket_id = t.id AND tt.tag_id = ?)"
+    let tag_filter = " AND EXISTS (SELECT 1 FROM task_tags tt \
+        WHERE tt.task_id = t.id AND tt.tag_id = ?)"
         .repeat(tag_ids.len());
     let count_sql = format!(
-        "SELECT COUNT(*) FROM tickets t WHERE t.status = ? \
+        "SELECT COUNT(*) FROM tasks t WHERE t.status = ? \
          AND (? = '' OR instr(lower('TM-' || t.id), lower(?)) > 0 \
               OR instr(lower(t.title), lower(?)) > 0) \
          AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?){tag_filter}"
@@ -452,13 +451,13 @@ async fn paged(pool: &SqlitePool, status: Status, q: PageQuery) -> AppResult<Jso
     }
     let total = count_query.fetch_one(pool).await?;
     let page_sql = format!(
-        "{SELECT_TICKET} WHERE t.status = ? \
+        "{SELECT_TASK} WHERE t.status = ? \
          AND (? = '' OR instr(lower('TM-' || t.id), lower(?)) > 0 \
               OR instr(lower(t.title), lower(?)) > 0) \
          AND (? IS NULL OR t.reviewer_id = ? OR t.implementer_id = ?) \
          {tag_filter} ORDER BY t.id LIMIT ? OFFSET ?"
     );
-    let mut items_query = sqlx::query_as::<_, TicketRow>(&page_sql)
+    let mut items_query = sqlx::query_as::<_, TaskRow>(&page_sql)
         .bind(status.as_str())
         .bind(search)
         .bind(search)
@@ -503,26 +502,26 @@ pub async fn get_one(
     State(state): State<AppState>,
     _user: AuthUser,
     Path(id): Path<i64>,
-) -> AppResult<Json<TicketOut>> {
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+) -> AppResult<Json<TaskOut>> {
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 #[derive(Deserialize)]
-pub struct TicketSearchQuery {
+pub struct TaskSearchQuery {
     q: String,
 }
 
 pub async fn search(
     State(state): State<AppState>,
     _user: AuthUser,
-    Query(q): Query<TicketSearchQuery>,
-) -> AppResult<Json<Vec<TicketSummary>>> {
+    Query(q): Query<TaskSearchQuery>,
+) -> AppResult<Json<Vec<TaskSummary>>> {
     let q = q.q.trim();
     if q.is_empty() || q.chars().count() > 200 {
         return Err(AppError::BadRequest("q must be 1-200 characters".into()));
     }
-    let rows = sqlx::query_as::<_, TicketRow>(&format!(
-        "{SELECT_TICKET} WHERE t.status != 'archived' \
+    let rows = sqlx::query_as::<_, TaskRow>(&format!(
+        "{SELECT_TASK} WHERE t.status != 'archived' \
          AND (instr(lower('TM-' || t.id), lower(?)) > 0 \
               OR instr(lower(t.title), lower(?)) > 0) \
          ORDER BY t.id DESC LIMIT 20"
@@ -543,7 +542,7 @@ where
 }
 
 #[derive(Deserialize)]
-pub struct NewTicket {
+pub struct NewTask {
     title: String,
     #[serde(default)]
     details: String,
@@ -560,7 +559,7 @@ pub struct NewTicket {
 }
 
 #[derive(Deserialize)]
-pub struct UpdateTicket {
+pub struct UpdateTask {
     title: Option<String>,
     details: Option<String>,
     business_requirements: Option<String>,
@@ -611,17 +610,17 @@ async fn check_assignee(pool: &SqlitePool, id: Option<i64>) -> AppResult<()> {
 
 async fn record_history<'a>(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    ticket_id: i64,
+    task_id: i64,
     field: &str,
     old: Option<&str>,
     new: impl Into<Option<&'a str>>,
     user_id: i64,
 ) -> AppResult<()> {
     sqlx::query(
-        "INSERT INTO ticket_history (ticket_id, field, old_value, new_value, changed_by) \
+        "INSERT INTO task_history (task_id, field, old_value, new_value, changed_by) \
          VALUES (?, ?, ?, ?, ?)",
     )
-    .bind(ticket_id)
+    .bind(task_id)
     .bind(field)
     .bind(old)
     .bind(new.into())
@@ -634,8 +633,8 @@ async fn record_history<'a>(
 pub async fn create(
     State(state): State<AppState>,
     user: AuthUser,
-    Json(req): Json<NewTicket>,
-) -> AppResult<(StatusCode, Json<TicketOut>)> {
+    Json(req): Json<NewTask>,
+) -> AppResult<(StatusCode, Json<TaskOut>)> {
     let title = req.title.trim();
     validate_title(title)?;
     for (n, v) in [
@@ -653,7 +652,7 @@ pub async fn create(
 
     let mut tx = state.pool.begin().await?;
     let id = sqlx::query(
-        "INSERT INTO tickets (title, details, business_requirements, technical_requirements, \
+        "INSERT INTO tasks (title, details, business_requirements, technical_requirements, \
          implementation_notes, status, priority, created_by, reviewer_id, implementer_id) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -675,7 +674,7 @@ pub async fn create(
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
-        Json(fetch_ticket(&state.pool, id).await?),
+        Json(fetch_task(&state.pool, id).await?),
     ))
 }
 
@@ -683,8 +682,8 @@ pub async fn update(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<i64>,
-    Json(req): Json<UpdateTicket>,
-) -> AppResult<Json<TicketOut>> {
+    Json(req): Json<UpdateTask>,
+) -> AppResult<Json<TaskOut>> {
     let cur = fetch_row(&state.pool, id).await?;
     let cur_status = Status::parse(&cur.status)?;
     let cur_priority = Priority::parse(&cur.priority)?;
@@ -699,7 +698,7 @@ pub async fn update(
         || req.implementer_id.is_some();
     if cur_status == Status::Archived && non_status_edit {
         return Err(AppError::Conflict(
-            "archived tickets are read-only; change the status to restore it first".into(),
+            "archived tasks are read-only; change the status to restore it first".into(),
         ));
     }
 
@@ -737,7 +736,7 @@ pub async fn update(
 
     let mut tx = state.pool.begin().await?;
     sqlx::query(
-        "UPDATE tickets SET title = ?, details = ?, business_requirements = ?, \
+        "UPDATE tasks SET title = ?, details = ?, business_requirements = ?, \
          technical_requirements = ?, implementation_notes = ?, status = ?, priority = ?, \
          reviewer_id = ?, implementer_id = ?, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
@@ -777,7 +776,7 @@ pub async fn update(
         .await?;
     }
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 #[derive(Deserialize, Clone, Copy)]
@@ -792,17 +791,17 @@ pub struct MoveReq {
     direction: Direction,
 }
 
-pub async fn move_ticket(
+pub async fn move_task(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<i64>,
     Json(req): Json<MoveReq>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     let cur = Status::parse(&fetch_row(&state.pool, id).await?.status)?;
     let idx = BOARD
         .iter()
         .position(|s| *s == cur)
-        .ok_or_else(|| AppError::BadRequest("ticket is not on the board".into()))?;
+        .ok_or_else(|| AppError::BadRequest("task is not on the board".into()))?;
     let target = match req.direction {
         Direction::Up => idx.checked_sub(1),
         Direction::Down => Some(idx + 1).filter(|i| *i < BOARD.len()),
@@ -812,7 +811,7 @@ pub async fn move_ticket(
 
     let mut tx = state.pool.begin().await?;
     sqlx::query(
-        "UPDATE tickets SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+        "UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
          WHERE id = ?",
     )
     .bind(target.as_str())
@@ -829,7 +828,7 @@ pub async fn move_ticket(
     )
     .await?;
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 #[derive(Serialize, FromRow)]
@@ -889,7 +888,7 @@ pub struct NewLink {
 async fn ensure_editable(pool: &SqlitePool, id: i64) -> AppResult<()> {
     if Status::parse(&fetch_row(pool, id).await?.status)? == Status::Archived {
         return Err(AppError::Conflict(
-            "archived tickets are read-only; change the status to restore it first".into(),
+            "archived tasks are read-only; change the status to restore it first".into(),
         ));
     }
     Ok(())
@@ -907,7 +906,7 @@ pub async fn block(
     user: AuthUser,
     Path(id): Path<i64>,
     Json(req): Json<BlockReq>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     let reason = req.reason.trim();
     if reason.is_empty() || reason.chars().count() > MAX_BLOCK_REASON {
         return Err(AppError::BadRequest(format!(
@@ -917,7 +916,7 @@ pub async fn block(
     ensure_editable(&state.pool, id).await?;
     let mut tx = state.pool.begin().await?;
     let changed = sqlx::query(
-        "UPDATE tickets SET blocked_reason = ?, \
+        "UPDATE tasks SET blocked_reason = ?, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
          WHERE id = ? AND blocked_reason IS NULL",
     )
@@ -927,29 +926,29 @@ pub async fn block(
     .await?
     .rows_affected();
     if changed == 0 {
-        return Err(AppError::Conflict("ticket is already blocked".into()));
+        return Err(AppError::Conflict("task is already blocked".into()));
     }
     record_history(&mut tx, id, "blocked", None, reason, user.id).await?;
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 pub async fn unblock(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<i64>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     ensure_editable(&state.pool, id).await?;
     let mut tx = state.pool.begin().await?;
     let reason: Option<String> =
-        sqlx::query_scalar("SELECT blocked_reason FROM tickets WHERE id = ?")
+        sqlx::query_scalar("SELECT blocked_reason FROM tasks WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or(AppError::NotFound)?;
-    let reason = reason.ok_or_else(|| AppError::Conflict("ticket is not blocked".into()))?;
+    let reason = reason.ok_or_else(|| AppError::Conflict("task is not blocked".into()))?;
     sqlx::query(
-        "UPDATE tickets SET blocked_reason = NULL, \
+        "UPDATE tasks SET blocked_reason = NULL, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
     )
     .bind(id)
@@ -957,7 +956,7 @@ pub async fn unblock(
     .await?;
     record_history(&mut tx, id, "unblocked", Some(&reason), None, user.id).await?;
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 pub async fn add_link(
@@ -965,7 +964,7 @@ pub async fn add_link(
     user: AuthUser,
     Path(id): Path<i64>,
     Json(req): Json<NewLink>,
-) -> AppResult<(StatusCode, Json<TicketOut>)> {
+) -> AppResult<(StatusCode, Json<TaskOut>)> {
     let url = req.url.trim();
     let label = req.label.trim();
     validate_url(url)?;
@@ -977,18 +976,18 @@ pub async fn add_link(
     ensure_editable(&state.pool, id).await?;
 
     let mut tx = state.pool.begin().await?;
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ticket_links WHERE ticket_id = ?")
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM task_links WHERE task_id = ?")
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
     if count >= MAX_LINKS {
         return Err(AppError::BadRequest(format!(
-            "a ticket can have at most {MAX_LINKS} links"
+            "a task can have at most {MAX_LINKS} links"
         )));
     }
     let inserted = sqlx::query(
-        "INSERT INTO ticket_links (ticket_id, url, label, created_by) VALUES (?, ?, ?, ?) \
-         ON CONFLICT(ticket_id, url) DO NOTHING",
+        "INSERT INTO task_links (task_id, url, label, created_by) VALUES (?, ?, ?, ?) \
+         ON CONFLICT(task_id, url) DO NOTHING",
     )
     .bind(id)
     .bind(url)
@@ -999,7 +998,7 @@ pub async fn add_link(
     .rows_affected();
     if inserted == 0 {
         return Err(AppError::Conflict(
-            "this url is already linked to the ticket".into(),
+            "this url is already linked to the task".into(),
         ));
     }
     record_history(&mut tx, id, "link_added", None, url, user.id).await?;
@@ -1007,7 +1006,7 @@ pub async fn add_link(
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
-        Json(fetch_ticket(&state.pool, id).await?),
+        Json(fetch_task(&state.pool, id).await?),
     ))
 }
 
@@ -1015,11 +1014,11 @@ pub async fn remove_link(
     State(state): State<AppState>,
     user: AuthUser,
     Path((id, link_id)): Path<(i64, i64)>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     ensure_editable(&state.pool, id).await?;
     let mut tx = state.pool.begin().await?;
     let url: String =
-        sqlx::query_scalar("DELETE FROM ticket_links WHERE id = ? AND ticket_id = ? RETURNING url")
+        sqlx::query_scalar("DELETE FROM task_links WHERE id = ? AND task_id = ? RETURNING url")
             .bind(link_id)
             .bind(id)
             .fetch_optional(&mut *tx)
@@ -1028,18 +1027,18 @@ pub async fn remove_link(
     record_history(&mut tx, id, "link_removed", Some(&url), None, user.id).await?;
     touch(&mut tx, id).await?;
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 #[derive(Deserialize)]
-pub struct AddRelatedTicket {
-    related_ticket_id: i64,
+pub struct AddRelatedTask {
+    related_task_id: i64,
 }
 
 async fn ensure_relation_editable(pool: &SqlitePool, id: i64, related_id: i64) -> AppResult<()> {
     if id == related_id {
         return Err(AppError::BadRequest(
-            "a ticket cannot be related to itself".into(),
+            "a task cannot be related to itself".into(),
         ));
     }
     ensure_editable(pool, id).await?;
@@ -1055,66 +1054,64 @@ fn relation_ids(id: i64, related_id: i64) -> (i64, i64) {
     }
 }
 
-pub async fn add_related_ticket(
+pub async fn add_related_task(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<i64>,
-    Json(req): Json<AddRelatedTicket>,
-) -> AppResult<(StatusCode, Json<TicketOut>)> {
-    if req.related_ticket_id < 1 {
+    Json(req): Json<AddRelatedTask>,
+) -> AppResult<(StatusCode, Json<TaskOut>)> {
+    if req.related_task_id < 1 {
         return Err(AppError::BadRequest(
-            "related_ticket_id must be a positive ticket ID".into(),
+            "related_task_id must be a positive task ID".into(),
         ));
     }
-    ensure_relation_editable(&state.pool, id, req.related_ticket_id).await?;
-    let (ticket_id, related_ticket_id) = relation_ids(id, req.related_ticket_id);
+    ensure_relation_editable(&state.pool, id, req.related_task_id).await?;
+    let (task_id, related_task_id) = relation_ids(id, req.related_task_id);
     let mut tx = state.pool.begin().await?;
     let inserted = sqlx::query(
-        "INSERT INTO ticket_relations (ticket_id, related_ticket_id, created_by) \
-         VALUES (?, ?, ?) ON CONFLICT(ticket_id, related_ticket_id) DO NOTHING",
+        "INSERT INTO task_relations (task_id, related_task_id, created_by) \
+         VALUES (?, ?, ?) ON CONFLICT(task_id, related_task_id) DO NOTHING",
     )
-    .bind(ticket_id)
-    .bind(related_ticket_id)
+    .bind(task_id)
+    .bind(related_task_id)
     .bind(user.id)
     .execute(&mut *tx)
     .await?
     .rows_affected();
     if inserted == 0 {
-        return Err(AppError::Conflict(
-            "these tickets are already related".into(),
-        ));
+        return Err(AppError::Conflict("these tasks are already related".into()));
     }
-    touch(&mut tx, ticket_id).await?;
-    touch(&mut tx, related_ticket_id).await?;
+    touch(&mut tx, task_id).await?;
+    touch(&mut tx, related_task_id).await?;
     tx.commit().await?;
     Ok((
         StatusCode::CREATED,
-        Json(fetch_ticket(&state.pool, id).await?),
+        Json(fetch_task(&state.pool, id).await?),
     ))
 }
 
-pub async fn remove_related_ticket(
+pub async fn remove_related_task(
     State(state): State<AppState>,
     _user: AuthUser,
     Path((id, related_id)): Path<(i64, i64)>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     ensure_relation_editable(&state.pool, id, related_id).await?;
-    let (ticket_id, related_ticket_id) = relation_ids(id, related_id);
+    let (task_id, related_task_id) = relation_ids(id, related_id);
     let mut tx = state.pool.begin().await?;
     let removed =
-        sqlx::query("DELETE FROM ticket_relations WHERE ticket_id = ? AND related_ticket_id = ?")
-            .bind(ticket_id)
-            .bind(related_ticket_id)
+        sqlx::query("DELETE FROM task_relations WHERE task_id = ? AND related_task_id = ?")
+            .bind(task_id)
+            .bind(related_task_id)
             .execute(&mut *tx)
             .await?
             .rows_affected();
     if removed == 0 {
         return Err(AppError::NotFound);
     }
-    touch(&mut tx, ticket_id).await?;
-    touch(&mut tx, related_ticket_id).await?;
+    touch(&mut tx, task_id).await?;
+    touch(&mut tx, related_task_id).await?;
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 #[derive(Deserialize)]
@@ -1127,7 +1124,7 @@ pub async fn add_tag(
     _user: AuthUser,
     Path(id): Path<i64>,
     Json(req): Json<AddTag>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     fetch_row(&state.pool, id).await?;
     let tag_archived: Option<bool> = sqlx::query_scalar("SELECT archived FROM tags WHERE id = ?")
         .bind(req.tag_id)
@@ -1137,15 +1134,15 @@ pub async fn add_tag(
         None => return Err(AppError::NotFound),
         Some(true) => {
             return Err(AppError::Conflict(
-                "archived tags cannot be assigned to tickets".into(),
+                "archived tags cannot be assigned to tasks".into(),
             ));
         }
         Some(false) => {}
     }
     let mut tx = state.pool.begin().await?;
     let inserted = sqlx::query(
-        "INSERT INTO ticket_tags (ticket_id, tag_id) VALUES (?, ?) \
-         ON CONFLICT(ticket_id, tag_id) DO NOTHING",
+        "INSERT INTO task_tags (task_id, tag_id) VALUES (?, ?) \
+         ON CONFLICT(task_id, tag_id) DO NOTHING",
     )
     .bind(id)
     .bind(req.tag_id)
@@ -1155,17 +1152,17 @@ pub async fn add_tag(
         touch(&mut tx, id).await?;
     }
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 pub async fn remove_tag(
     State(state): State<AppState>,
     _user: AuthUser,
     Path((id, tag_id)): Path<(i64, i64)>,
-) -> AppResult<Json<TicketOut>> {
+) -> AppResult<Json<TaskOut>> {
     fetch_row(&state.pool, id).await?;
     let mut tx = state.pool.begin().await?;
-    let removed = sqlx::query("DELETE FROM ticket_tags WHERE ticket_id = ? AND tag_id = ?")
+    let removed = sqlx::query("DELETE FROM task_tags WHERE task_id = ? AND tag_id = ?")
         .bind(id)
         .bind(tag_id)
         .execute(&mut *tx)
@@ -1176,15 +1173,13 @@ pub async fn remove_tag(
     }
     touch(&mut tx, id).await?;
     tx.commit().await?;
-    Ok(Json(fetch_ticket(&state.pool, id).await?))
+    Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
 async fn touch(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> AppResult<()> {
-    sqlx::query(
-        "UPDATE tickets SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
-    )
-    .bind(id)
-    .execute(&mut **tx)
-    .await?;
+    sqlx::query("UPDATE tasks SET updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?")
+        .bind(id)
+        .execute(&mut **tx)
+        .await?;
     Ok(())
 }

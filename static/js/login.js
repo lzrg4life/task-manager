@@ -10,7 +10,7 @@ form.addEventListener("submit", async (e) => {
   try {
     const result = await login(data.get("email"), data.get("password"));
     saveSession(result);
-    location.href = "/tickets.html";
+    location.href = "/tasks.html";
   } catch (err) {
     error.textContent = err.message;
     error.hidden = false;

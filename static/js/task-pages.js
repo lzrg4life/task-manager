@@ -1,13 +1,13 @@
 import { api } from "./api.js";
-import { initPage, show, ticketRow, ticketTable } from "./ticket-common.js";
+import { initPage, show, taskRow, taskTable } from "./task-common.js";
 
 await initPage();
 const container = document.getElementById("list");
 const kind = container.dataset.kind;
-const ticketSearch = document.getElementById("ticket-search");
-const ticketAssignee = document.getElementById("ticket-assignee");
-const ticketTags = document.getElementById("ticket-tags");
-const ticketFilters = document.getElementById("ticket-filters");
+const taskSearch = document.getElementById("task-search");
+const taskAssignee = document.getElementById("task-assignee");
+const taskTags = document.getElementById("task-tags");
+const taskFilters = document.getElementById("task-filters");
 const filterToggle = document.getElementById("toggle-filters");
 let page = 1;
 let requestId = 0;
@@ -17,25 +17,25 @@ let tagsLoaded = false;
 let tagsPromise;
 let searchTimeout;
 
-ticketSearch.addEventListener("input", () => {
+taskSearch.addEventListener("input", () => {
   clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => {
     page = 1;
     load();
   }, 200);
 });
-ticketAssignee.addEventListener("change", () => {
+taskAssignee.addEventListener("change", () => {
   page = 1;
   load();
 });
-ticketTags.addEventListener("change", () => {
+taskTags.addEventListener("change", () => {
   page = 1;
   load();
 });
 filterToggle.addEventListener("click", () => {
-  ticketFilters.hidden = !ticketFilters.hidden;
-  filterToggle.setAttribute("aria-expanded", String(!ticketFilters.hidden));
-  filterToggle.textContent = ticketFilters.hidden ? "Show filters" : "Hide filters";
+  taskFilters.hidden = !taskFilters.hidden;
+  filterToggle.setAttribute("aria-expanded", String(!taskFilters.hidden));
+  filterToggle.textContent = taskFilters.hidden ? "Show filters" : "Hide filters";
 });
 
 async function load() {
@@ -50,7 +50,7 @@ async function load() {
             option.textContent = user.display_name
               ? `${user.display_name} (${user.email})`
               : user.email;
-            ticketAssignee.append(option);
+            taskAssignee.append(option);
           }
           assigneesLoaded = true;
         })
@@ -64,7 +64,7 @@ async function load() {
     if (!tagsLoaded) {
       tagsPromise ??= api("/api/tags?include_archived=true")
         .then((tags) => {
-          ticketTags.replaceChildren(...tags.map((tag) => {
+          taskTags.replaceChildren(...tags.map((tag) => {
             const option = document.createElement("option");
             option.value = String(tag.id);
             option.textContent = `${tag.name}${tag.archived ? " (archived)" : ""}`;
@@ -81,12 +81,12 @@ async function load() {
       if (currentRequest !== requestId) return;
     }
     const params = new URLSearchParams({ page: String(page), per_page: "25" });
-    const search = ticketSearch.value.trim();
+    const search = taskSearch.value.trim();
     if (search) params.set("search", search);
-    if (ticketAssignee.value) params.set("assignee_id", ticketAssignee.value);
-    const tagIds = [...ticketTags.selectedOptions].map((option) => option.value);
+    if (taskAssignee.value) params.set("assignee_id", taskAssignee.value);
+    const tagIds = [...taskTags.selectedOptions].map((option) => option.value);
     if (tagIds.length) params.set("tag_ids", tagIds.join(","));
-    const data = await api(`/api/tickets/${kind}?${params}`);
+    const data = await api(`/api/tasks/${kind}?${params}`);
     if (currentRequest !== requestId) return;
     const pages = Math.max(1, Math.ceil(data.total / data.per_page));
     const prev = document.createElement("button");
@@ -100,11 +100,11 @@ async function load() {
     next.disabled = page >= pages;
     next.addEventListener("click", () => { page += 1; load(); });
     const info = document.createElement("span");
-    info.textContent = `Page ${page} of ${pages} (${data.total} tickets)`;
+    info.textContent = `Page ${page} of ${pages} (${data.total} tasks)`;
     const pager = document.createElement("div");
     pager.className = "pager";
     pager.append(prev, info, next);
-    container.replaceChildren(ticketTable(data.items.map((t) => ticketRow(t))), pager);
+    container.replaceChildren(taskTable(data.items.map((t) => taskRow(t))), pager);
     show("");
   } catch (err) {
     if (currentRequest === requestId) show(err.message);

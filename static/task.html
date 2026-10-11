@@ -2,19 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Ticket – Task Manager</title>
+  <title>Task – Task Manager</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=4">
+  <link rel="stylesheet" href="/css/app.css?v=5">
 </head>
 <body>
   <main class="card wide fixed-head">
     <div class="row">
-      <h1 id="heading">New ticket</h1>
-      <span><button type="submit" form="ticket-form" style="min-width: 8rem">Save</button></span>
+      <h1 id="heading">New task</h1>
+      <span><button type="submit" form="task-form" style="min-width: 8rem">Save</button></span>
     </div>
     <div class="scroll-body">
     <p id="error" class="error" role="alert" hidden></p>
-    <form id="ticket-form">
+    <form id="task-form">
       <p><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></p>
       <label>Title <input type="text" name="title" maxlength="200" required></label>
       <div class="grid">
@@ -44,7 +44,7 @@
       <p id="blocked-note"></p>
       <form id="block-form" class="link-form">
         <input type="text" name="reason" placeholder="Reason for blocking" maxlength="500" required>
-        <button type="submit">Block ticket</button>
+        <button type="submit">Block task</button>
       </form>
       <button type="button" id="unblock-btn" class="secondary" hidden>Unblock</button>
     </section>
@@ -64,11 +64,11 @@
       </form>
     </section>
     <section id="related-section" class="list" hidden>
-      <h2>Related tickets</h2>
-      <ul id="related-tickets" class="links"></ul>
-      <p id="no-related-tickets">No related tickets.</p>
+      <h2>Related tasks</h2>
+      <ul id="related-tasks" class="links"></ul>
+      <p id="no-related-tasks">No related tasks.</p>
       <form id="related-search-form" class="link-form">
-        <input type="text" name="query" placeholder="Search by ticket key or title" maxlength="200" required>
+        <input type="text" name="query" placeholder="Search by task key or title" maxlength="200" required>
         <button type="submit">Search</button>
       </form>
       <ul id="related-search-results" class="links" aria-live="polite"></ul>
@@ -79,6 +79,6 @@
     </section>
     </div>
   </main>
-  <script type="module" src="/js/ticket.js?v=2"></script>
+  <script type="module" src="/js/task.js?v=2"></script>
 </body>
 </html>

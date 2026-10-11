@@ -1,41 +1,41 @@
 import { api } from "./api.js";
-import { initPage, show, ticketRow, ticketTable, STATUS_LABELS } from "./ticket-common.js";
+import { initPage, show, taskRow, taskTable, STATUS_LABELS } from "./task-common.js";
 
 const currentUser = await initPage();
 const board = document.getElementById("board");
-const ticketSearch = document.getElementById("ticket-search");
-const ticketAssignee = document.getElementById("ticket-assignee");
-const ticketTags = document.getElementById("ticket-tags");
-const ticketFilters = document.getElementById("ticket-filters");
+const taskSearch = document.getElementById("task-search");
+const taskAssignee = document.getElementById("task-assignee");
+const taskTags = document.getElementById("task-tags");
+const taskFilters = document.getElementById("task-filters");
 const filterToggle = document.getElementById("toggle-filters");
 const archiveDialog = document.getElementById("archive-dialog");
 const archiveMessage = document.getElementById("archive-message");
 const archiveError = document.getElementById("archive-error");
 const archiveConfirm = document.getElementById("archive-confirm");
-let ticketToArchive = null;
-let ticketLists = [];
+let taskToArchive = null;
+let taskLists = [];
 let assigneesLoaded = false;
 let tagsLoaded = false;
 const openComments = new Set();
-const commentsByTicket = new Map();
+const commentsByTask = new Map();
 const loadingComments = new Set();
 const commentsErrors = new Map();
 const editingComments = new Map();
 
-function setCommentsError(ticketId, message) {
-  commentsErrors.set(ticketId, message);
+function setCommentsError(taskId, message) {
+  commentsErrors.set(taskId, message);
 }
 
-async function loadComments(ticketId) {
-  loadingComments.add(ticketId);
-  commentsErrors.delete(ticketId);
+async function loadComments(taskId) {
+  loadingComments.add(taskId);
+  commentsErrors.delete(taskId);
   renderBoard();
   try {
-    commentsByTicket.set(ticketId, await api(`/api/tickets/${ticketId}/comments`));
+    commentsByTask.set(taskId, await api(`/api/tasks/${taskId}/comments`));
   } catch (err) {
-    setCommentsError(ticketId, err.message);
+    setCommentsError(taskId, err.message);
   } finally {
-    loadingComments.delete(ticketId);
+    loadingComments.delete(taskId);
     renderBoard();
   }
 }
@@ -49,20 +49,20 @@ function commentActionButton(label, handler) {
   return button;
 }
 
-function renderComments(ticketId) {
+function renderComments(taskId) {
   const thread = document.createElement("div");
   thread.className = "comment-thread";
-  if (loadingComments.has(ticketId)) {
+  if (loadingComments.has(taskId)) {
     const loading = document.createElement("p");
     loading.textContent = "Loading comments…";
     thread.append(loading);
-  } else if (commentsErrors.has(ticketId)) {
+  } else if (commentsErrors.has(taskId)) {
     const error = document.createElement("p");
     error.className = "error";
-    error.textContent = commentsErrors.get(ticketId);
-    thread.append(error, commentActionButton("Retry", () => loadComments(ticketId)));
+    error.textContent = commentsErrors.get(taskId);
+    thread.append(error, commentActionButton("Retry", () => loadComments(taskId)));
   } else {
-    for (const comment of commentsByTicket.get(ticketId) || []) {
+    for (const comment of commentsByTask.get(taskId) || []) {
       const item = document.createElement("article");
       item.className = "comment";
       const meta = document.createElement("div");
@@ -75,7 +75,7 @@ function renderComments(ticketId) {
         deleted.className = "comment-body";
         deleted.textContent = "Comment deleted";
         item.append(deleted);
-      } else if (editingComments.get(ticketId) === comment.id) {
+      } else if (editingComments.get(taskId) === comment.id) {
         const form = document.createElement("form");
         form.className = "comment-form";
         const textarea = document.createElement("textarea");
@@ -88,7 +88,7 @@ function renderComments(ticketId) {
         save.type = "submit";
         save.textContent = "Save";
         actions.append(save, commentActionButton("Cancel", () => {
-          editingComments.delete(ticketId);
+          editingComments.delete(taskId);
           renderBoard();
         }));
         form.append(textarea, actions);
@@ -96,14 +96,14 @@ function renderComments(ticketId) {
           event.preventDefault();
           save.disabled = true;
           try {
-            await api(`/api/tickets/${ticketId}/comments/${comment.id}`, {
+            await api(`/api/tasks/${taskId}/comments/${comment.id}`, {
               method: "PATCH",
               body: { body: textarea.value },
             });
-            editingComments.delete(ticketId);
-            await loadComments(ticketId);
+            editingComments.delete(taskId);
+            await loadComments(taskId);
           } catch (err) {
-            setCommentsError(ticketId, err.message);
+            setCommentsError(taskId, err.message);
             renderBoard();
           }
         });
@@ -117,16 +117,16 @@ function renderComments(ticketId) {
           const actions = document.createElement("div");
           actions.className = "comment-actions";
           actions.append(commentActionButton("Edit", () => {
-            editingComments.set(ticketId, comment.id);
+            editingComments.set(taskId, comment.id);
             renderBoard();
           }));
           actions.append(commentActionButton("Delete", async () => {
             if (!confirm("Delete this comment?")) return;
             try {
-              await api(`/api/tickets/${ticketId}/comments/${comment.id}`, { method: "DELETE" });
-              await loadComments(ticketId);
+              await api(`/api/tasks/${taskId}/comments/${comment.id}`, { method: "DELETE" });
+              await loadComments(taskId);
             } catch (err) {
-              setCommentsError(ticketId, err.message);
+              setCommentsError(taskId, err.message);
               renderBoard();
             }
           }));
@@ -150,13 +150,13 @@ function renderComments(ticketId) {
       event.preventDefault();
       submit.disabled = true;
       try {
-        await api(`/api/tickets/${ticketId}/comments`, {
+        await api(`/api/tasks/${taskId}/comments`, {
           method: "POST",
           body: { body: textarea.value },
         });
-        await loadComments(ticketId);
+        await loadComments(taskId);
       } catch (err) {
-        setCommentsError(ticketId, err.message);
+        setCommentsError(taskId, err.message);
         renderBoard();
       }
     });
@@ -167,30 +167,30 @@ function renderComments(ticketId) {
 
 async function move(id, direction) {
   try {
-    await api(`/api/tickets/${id}/move`, { method: "POST", body: { direction } });
+    await api(`/api/tasks/${id}/move`, { method: "POST", body: { direction } });
     await load();
   } catch (err) { show(err.message); }
 }
 
-function openArchiveDialog(ticket) {
-  ticketToArchive = ticket;
-  archiveMessage.textContent = `Are you sure you want to archive "${ticket.title}"?`;
+function openArchiveDialog(task) {
+  taskToArchive = task;
+  archiveMessage.textContent = `Are you sure you want to archive "${task.title}"?`;
   archiveError.textContent = "";
   archiveError.hidden = true;
   archiveConfirm.disabled = false;
   archiveDialog.showModal();
 }
 
-async function archiveTicket() {
-  if (!ticketToArchive) return;
+async function archiveTask() {
+  if (!taskToArchive) return;
   archiveConfirm.disabled = true;
   try {
-    await api(`/api/tickets/${ticketToArchive.id}`, {
+    await api(`/api/tasks/${taskToArchive.id}`, {
       method: "PATCH",
       body: { status: "archived" },
     });
     archiveDialog.close();
-    ticketToArchive = null;
+    taskToArchive = null;
     await load();
   } catch (err) {
     archiveError.textContent = err.message;
@@ -212,34 +212,34 @@ function moveButton(label, title, enabled, handler) {
 
 document.getElementById("archive-cancel").addEventListener("click", () => {
   archiveDialog.close();
-  ticketToArchive = null;
+  taskToArchive = null;
 });
-archiveConfirm.addEventListener("click", archiveTicket);
-ticketSearch.addEventListener("input", renderBoard);
-ticketAssignee.addEventListener("change", renderBoard);
-ticketTags.addEventListener("change", renderBoard);
+archiveConfirm.addEventListener("click", archiveTask);
+taskSearch.addEventListener("input", renderBoard);
+taskAssignee.addEventListener("change", renderBoard);
+taskTags.addEventListener("change", renderBoard);
 filterToggle.addEventListener("click", () => {
-  ticketFilters.hidden = !ticketFilters.hidden;
-  filterToggle.setAttribute("aria-expanded", String(!ticketFilters.hidden));
-  filterToggle.textContent = ticketFilters.hidden ? "Show filters" : "Hide filters";
+  taskFilters.hidden = !taskFilters.hidden;
+  filterToggle.setAttribute("aria-expanded", String(!taskFilters.hidden));
+  filterToggle.textContent = taskFilters.hidden ? "Show filters" : "Hide filters";
 });
 
 function renderBoard() {
-  const search = ticketSearch.value.trim().toLocaleLowerCase();
-  const assigneeId = ticketAssignee.value;
-  const tagIds = [...ticketTags.selectedOptions].map((option) => option.value);
-  board.replaceChildren(...ticketLists.map((list, i) => {
+  const search = taskSearch.value.trim().toLocaleLowerCase();
+  const assigneeId = taskAssignee.value;
+  const tagIds = [...taskTags.selectedOptions].map((option) => option.value);
+  board.replaceChildren(...taskLists.map((list, i) => {
     const section = document.createElement("section");
     section.className = "list";
-    const tickets = list.tickets.filter((ticket) => {
+    const tasks = list.tasks.filter((task) => {
       const matchesSearch = !search
-        || ticket.key.toLocaleLowerCase().includes(search)
-        || ticket.title.toLocaleLowerCase().includes(search);
+        || task.key.toLocaleLowerCase().includes(search)
+        || task.title.toLocaleLowerCase().includes(search);
       const matchesAssignee = !assigneeId
-        || String(ticket.reviewer?.id) === assigneeId
-        || String(ticket.implementer?.id) === assigneeId;
+        || String(task.reviewer?.id) === assigneeId
+        || String(task.implementer?.id) === assigneeId;
       const matchesTags = tagIds.every((id) =>
-        ticket.tags.some((tag) => String(tag.id) === id));
+        task.tags.some((tag) => String(tag.id) === id));
       return matchesSearch && matchesAssignee && matchesTags;
     });
     const header = document.createElement("button");
@@ -248,7 +248,7 @@ function renderBoard() {
     const collapsedByDefault = list.status !== "active";
     header.setAttribute("aria-expanded", String(!collapsedByDefault));
     const h = document.createElement("h2");
-    h.textContent = `${STATUS_LABELS[list.status]} (${tickets.length})`;
+    h.textContent = `${STATUS_LABELS[list.status]} (${tasks.length})`;
     const body = document.createElement("div");
     body.classList.add("list-body");
     const setCollapsed = (collapsed) => {
@@ -259,39 +259,39 @@ function renderBoard() {
     header.append(h);
     section.append(header);
     setCollapsed(collapsedByDefault);
-    if (tickets.length === 0) {
+    if (tasks.length === 0) {
       const p = document.createElement("p");
-      p.textContent = "No tickets.";
+      p.textContent = "No tasks.";
       body.append(p);
       section.append(body);
       return section;
     }
-    const rows = tickets.flatMap((t) => {
+    const rows = tasks.flatMap((t) => {
       const cell = document.createElement("td");
       cell.className = "actions";
       cell.append(
         list.status === "completed"
-          ? moveButton("Archive", "Archive ticket", true, () => openArchiveDialog(t))
+          ? moveButton("Archive", "Archive task", true, () => openArchiveDialog(t))
           : moveButton("↑", "Move up", i > 0, () => move(t.id, "up")),
         " ",
-        moveButton("↓", "Move down", i < ticketLists.length - 1, () => move(t.id, "down")),
+        moveButton("↓", "Move down", i < taskLists.length - 1, () => move(t.id, "down")),
       );
       const comments = commentActionButton(
         openComments.has(t.id)
           ? "Hide comments"
-          : `Comments${commentsByTicket.has(t.id) ? ` (${commentsByTicket.get(t.id).length})` : ""}`,
+          : `Comments${commentsByTask.has(t.id) ? ` (${commentsByTask.get(t.id).length})` : ""}`,
         () => {
           if (openComments.has(t.id)) {
             openComments.delete(t.id);
           } else {
             openComments.add(t.id);
-            if (!commentsByTicket.has(t.id)) void loadComments(t.id);
+            if (!commentsByTask.has(t.id)) void loadComments(t.id);
           }
           renderBoard();
         },
       );
       cell.append(" ", comments);
-      const row = ticketRow(t, cell);
+      const row = taskRow(t, cell);
       if (!openComments.has(t.id)) return [row];
       const commentsRow = document.createElement("tr");
       commentsRow.className = "comments-row";
@@ -301,7 +301,7 @@ function renderBoard() {
       commentsRow.append(commentsCell);
       return [row, commentsRow];
     });
-    body.append(ticketTable(rows, true));
+    body.append(taskTable(rows, true));
     section.append(body);
     return section;
   }));
@@ -317,13 +317,13 @@ async function load() {
         option.textContent = user.display_name
           ? `${user.display_name} (${user.email})`
           : user.email;
-        ticketAssignee.append(option);
+        taskAssignee.append(option);
       }
       assigneesLoaded = true;
     }
     if (!tagsLoaded) {
       const tags = await api("/api/tags?include_archived=true");
-      ticketTags.replaceChildren(...tags.map((tag) => {
+      taskTags.replaceChildren(...tags.map((tag) => {
         const option = document.createElement("option");
         option.value = String(tag.id);
         option.textContent = `${tag.name}${tag.archived ? " (archived)" : ""}`;
@@ -332,7 +332,7 @@ async function load() {
       }));
       tagsLoaded = true;
     }
-    ticketLists = await api("/api/tickets");
+    taskLists = await api("/api/tasks");
     renderBoard();
     show("");
   } catch (err) { show(err.message); }

@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { initPage } from "./ticket-common.js";
+import { initPage } from "./task-common.js";
 
 const me = await initPage();
 if (!me.is_admin) {

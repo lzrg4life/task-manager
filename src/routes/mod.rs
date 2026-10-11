@@ -8,7 +8,7 @@ use crate::{AppState, error::AppError};
 pub mod auth;
 pub mod comments;
 pub mod tags;
-pub mod tickets;
+pub mod tasks;
 pub mod users;
 
 pub fn api_router() -> Router<AppState> {
@@ -19,39 +19,33 @@ pub fn api_router() -> Router<AppState> {
         .route("/me", get(auth::me))
         .route("/users", get(users::list).post(users::create))
         .route("/users/{id}", get(users::get_one).patch(users::update))
-        .route("/users/assignable", get(tickets::assignable_users))
+        .route("/users/assignable", get(tasks::assignable_users))
         .route("/tags", get(tags::list).post(tags::create))
         .route("/tags/{id}/archive", post(tags::archive))
-        .route("/tickets", get(tickets::list).post(tickets::create))
-        .route("/tickets/search", get(tickets::search))
-        .route("/tickets/archived", get(tickets::list_archived))
-        .route("/tickets/removed", get(tickets::list_removed))
+        .route("/tasks", get(tasks::list).post(tasks::create))
+        .route("/tasks/search", get(tasks::search))
+        .route("/tasks/archived", get(tasks::list_archived))
+        .route("/tasks/removed", get(tasks::list_removed))
+        .route("/tasks/{id}", get(tasks::get_one).patch(tasks::update))
+        .route("/tasks/{id}/move", post(tasks::move_task))
         .route(
-            "/tickets/{id}",
-            get(tickets::get_one).patch(tickets::update),
-        )
-        .route("/tickets/{id}/move", post(tickets::move_ticket))
-        .route(
-            "/tickets/{id}/comments",
+            "/tasks/{id}/comments",
             get(comments::list).post(comments::create),
         )
         .route(
-            "/tickets/{id}/comments/{comment_id}",
+            "/tasks/{id}/comments/{comment_id}",
             axum::routing::patch(comments::update).delete(comments::delete),
         )
-        .route("/tickets/{id}/block", post(tickets::block))
-        .route("/tickets/{id}/unblock", post(tickets::unblock))
-        .route("/tickets/{id}/links", post(tickets::add_link))
+        .route("/tasks/{id}/block", post(tasks::block))
+        .route("/tasks/{id}/unblock", post(tasks::unblock))
+        .route("/tasks/{id}/links", post(tasks::add_link))
+        .route("/tasks/{id}/links/{link_id}", delete(tasks::remove_link))
+        .route("/tasks/{id}/related", post(tasks::add_related_task))
         .route(
-            "/tickets/{id}/links/{link_id}",
-            delete(tickets::remove_link),
+            "/tasks/{id}/related/{related_id}",
+            delete(tasks::remove_related_task),
         )
-        .route("/tickets/{id}/related", post(tickets::add_related_ticket))
-        .route(
-            "/tickets/{id}/related/{related_id}",
-            delete(tickets::remove_related_ticket),
-        )
-        .route("/tickets/{id}/tags", post(tickets::add_tag))
-        .route("/tickets/{id}/tags/{tag_id}", delete(tickets::remove_tag))
+        .route("/tasks/{id}/tags", post(tasks::add_tag))
+        .route("/tasks/{id}/tags/{tag_id}", delete(tasks::remove_tag))
         .fallback(|| async { AppError::NotFound })
 }

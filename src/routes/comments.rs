@@ -17,7 +17,7 @@ const MAX_COMMENT_LENGTH: usize = 5000;
 #[derive(Debug, Serialize, FromRow)]
 pub struct CommentOut {
     id: i64,
-    ticket_id: i64,
+    task_id: i64,
     user_id: i64,
     author_name: String,
     author_email: String,
@@ -51,14 +51,14 @@ fn validate_body(body: &str) -> AppResult<String> {
 
 async fn fetch_comment(
     pool: &sqlx::SqlitePool,
-    ticket_id: i64,
+    task_id: i64,
     comment_id: i64,
 ) -> AppResult<CommentOwner> {
     sqlx::query_as::<_, CommentOwner>(
-        "SELECT user_id, deleted_at FROM ticket_comments WHERE id = ? AND ticket_id = ?",
+        "SELECT user_id, deleted_at FROM task_comments WHERE id = ? AND task_id = ?",
     )
     .bind(comment_id)
-    .bind(ticket_id)
+    .bind(task_id)
     .fetch_optional(pool)
     .await?
     .ok_or(AppError::NotFound)
@@ -75,27 +75,26 @@ fn require_comment_permission(user: &AuthUser, owner_id: i64) -> AppResult<()> {
 pub async fn list(
     State(state): State<AppState>,
     _user: AuthUser,
-    Path(ticket_id): Path<i64>,
+    Path(task_id): Path<i64>,
 ) -> AppResult<Json<Vec<CommentOut>>> {
-    let ticket_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tickets WHERE id = ?)")
-            .bind(ticket_id)
-            .fetch_one(&state.pool)
-            .await?;
-    if !ticket_exists {
+    let task_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tasks WHERE id = ?)")
+        .bind(task_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !task_exists {
         return Err(AppError::NotFound);
     }
 
     let comments = sqlx::query_as::<_, CommentOut>(
-        "SELECT c.id, c.ticket_id, c.user_id, \
+        "SELECT c.id, c.task_id, c.user_id, \
          CASE WHEN u.display_name = '' THEN u.email ELSE u.display_name END AS author_name, \
          u.email AS author_email, \
          CASE WHEN c.deleted_at IS NULL THEN c.body ELSE NULL END AS body, \
          c.created_at, c.updated_at, c.deleted_at \
-         FROM ticket_comments c JOIN users u ON u.id = c.user_id \
-         WHERE c.ticket_id = ? ORDER BY c.id",
+         FROM task_comments c JOIN users u ON u.id = c.user_id \
+         WHERE c.task_id = ? ORDER BY c.id",
     )
-    .bind(ticket_id)
+    .bind(task_id)
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(comments))
@@ -104,21 +103,20 @@ pub async fn list(
 pub async fn create(
     State(state): State<AppState>,
     user: AuthUser,
-    Path(ticket_id): Path<i64>,
+    Path(task_id): Path<i64>,
     Json(req): Json<CommentRequest>,
 ) -> AppResult<(StatusCode, Json<CommentOut>)> {
     let body = validate_body(&req.body)?;
-    let ticket_exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tickets WHERE id = ?)")
-            .bind(ticket_id)
-            .fetch_one(&state.pool)
-            .await?;
-    if !ticket_exists {
+    let task_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tasks WHERE id = ?)")
+        .bind(task_id)
+        .fetch_one(&state.pool)
+        .await?;
+    if !task_exists {
         return Err(AppError::NotFound);
     }
 
-    let id = sqlx::query("INSERT INTO ticket_comments (ticket_id, user_id, body) VALUES (?, ?, ?)")
-        .bind(ticket_id)
+    let id = sqlx::query("INSERT INTO task_comments (task_id, user_id, body) VALUES (?, ?, ?)")
+        .bind(task_id)
         .bind(user.id)
         .bind(body)
         .execute(&state.pool)
@@ -126,10 +124,10 @@ pub async fn create(
         .last_insert_rowid();
 
     let comment = sqlx::query_as::<_, CommentOut>(
-        "SELECT c.id, c.ticket_id, c.user_id, \
+        "SELECT c.id, c.task_id, c.user_id, \
          CASE WHEN u.display_name = '' THEN u.email ELSE u.display_name END AS author_name, \
          u.email AS author_email, c.body, c.created_at, c.updated_at, c.deleted_at \
-         FROM ticket_comments c JOIN users u ON u.id = c.user_id WHERE c.id = ?",
+         FROM task_comments c JOIN users u ON u.id = c.user_id WHERE c.id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -140,11 +138,11 @@ pub async fn create(
 pub async fn update(
     State(state): State<AppState>,
     user: AuthUser,
-    Path((ticket_id, comment_id)): Path<(i64, i64)>,
+    Path((task_id, comment_id)): Path<(i64, i64)>,
     Json(req): Json<CommentRequest>,
 ) -> AppResult<Json<CommentOut>> {
     let body = validate_body(&req.body)?;
-    let current = fetch_comment(&state.pool, ticket_id, comment_id).await?;
+    let current = fetch_comment(&state.pool, task_id, comment_id).await?;
     require_comment_permission(&user, current.user_id)?;
     if current.deleted_at.is_some() {
         return Err(AppError::Conflict(
@@ -153,13 +151,13 @@ pub async fn update(
     }
 
     let result = sqlx::query(
-        "UPDATE ticket_comments SET body = ?, \
+        "UPDATE task_comments SET body = ?, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
-         WHERE id = ? AND ticket_id = ? AND deleted_at IS NULL",
+         WHERE id = ? AND task_id = ? AND deleted_at IS NULL",
     )
     .bind(body)
     .bind(comment_id)
-    .bind(ticket_id)
+    .bind(task_id)
     .execute(&state.pool)
     .await?;
     if result.rows_affected() == 0 {
@@ -169,14 +167,14 @@ pub async fn update(
     }
 
     let comment = sqlx::query_as::<_, CommentOut>(
-        "SELECT c.id, c.ticket_id, c.user_id, \
+        "SELECT c.id, c.task_id, c.user_id, \
          CASE WHEN u.display_name = '' THEN u.email ELSE u.display_name END AS author_name, \
          u.email AS author_email, c.body, c.created_at, c.updated_at, c.deleted_at \
-         FROM ticket_comments c JOIN users u ON u.id = c.user_id \
-         WHERE c.id = ? AND c.ticket_id = ?",
+         FROM task_comments c JOIN users u ON u.id = c.user_id \
+         WHERE c.id = ? AND c.task_id = ?",
     )
     .bind(comment_id)
-    .bind(ticket_id)
+    .bind(task_id)
     .fetch_one(&state.pool)
     .await?;
     Ok(Json(comment))
@@ -185,22 +183,22 @@ pub async fn update(
 pub async fn delete(
     State(state): State<AppState>,
     user: AuthUser,
-    Path((ticket_id, comment_id)): Path<(i64, i64)>,
+    Path((task_id, comment_id)): Path<(i64, i64)>,
 ) -> AppResult<StatusCode> {
-    let current = fetch_comment(&state.pool, ticket_id, comment_id).await?;
+    let current = fetch_comment(&state.pool, task_id, comment_id).await?;
     require_comment_permission(&user, current.user_id)?;
     if current.deleted_at.is_some() {
         return Err(AppError::Conflict("comment is already deleted".into()));
     }
 
     let result = sqlx::query(
-        "UPDATE ticket_comments SET \
+        "UPDATE task_comments SET \
          deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now'), \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
-         WHERE id = ? AND ticket_id = ? AND deleted_at IS NULL",
+         WHERE id = ? AND task_id = ? AND deleted_at IS NULL",
     )
     .bind(comment_id)
-    .bind(ticket_id)
+    .bind(task_id)
     .execute(&state.pool)
     .await?;
     if result.rows_affected() == 0 {

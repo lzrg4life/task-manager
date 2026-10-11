@@ -1,7 +1,7 @@
 import { api, logout } from "./api.js";
 
 const NAV_ITEMS = [
-  { href: "/tickets.html", label: "Tickets", paths: ["/tickets.html", "/ticket.html"] },
+  { href: "/tasks.html", label: "Tasks", paths: ["/tasks.html", "/task.html"] },
   { href: "/archived.html", label: "Archived", paths: ["/archived.html"] },
   { href: "/removed.html", label: "Removed", paths: ["/removed.html"] },
 ];

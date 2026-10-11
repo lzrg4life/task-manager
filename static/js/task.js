@@ -1,8 +1,8 @@
 import { api } from "./api.js";
-import { initPage, show, td, userName, STATUS_LABELS, PRIORITY_LABELS } from "./ticket-common.js";
+import { initPage, show, td, userName, STATUS_LABELS, PRIORITY_LABELS } from "./task-common.js";
 
 const currentUser = await initPage();
-const form = document.getElementById("ticket-form");
+const form = document.getElementById("task-form");
 const id = new URLSearchParams(location.search).get("id");
 const TEXT_FIELDS = ["title", "details", "business_requirements", "technical_requirements", "implementation_notes"];
 const commentsSection = document.getElementById("comments-section");
@@ -89,7 +89,7 @@ function renderComments() {
         event.preventDefault();
         save.disabled = true;
         try {
-          await api(`/api/tickets/${encodeURIComponent(id)}/comments/${comment.id}`, {
+          await api(`/api/tasks/${encodeURIComponent(id)}/comments/${comment.id}`, {
             method: "PATCH",
             body: { body: input.value },
           });
@@ -116,7 +116,7 @@ function renderComments() {
         actions.append(commentButton("Delete", async () => {
           if (!confirm("Delete this comment?")) return;
           try {
-            await api(`/api/tickets/${encodeURIComponent(id)}/comments/${comment.id}`, {
+            await api(`/api/tasks/${encodeURIComponent(id)}/comments/${comment.id}`, {
               method: "DELETE",
             });
             await loadComments();
@@ -133,7 +133,7 @@ function renderComments() {
 
 async function loadComments() {
   try {
-    comments = await api(`/api/tickets/${encodeURIComponent(id)}/comments`);
+    comments = await api(`/api/tasks/${encodeURIComponent(id)}/comments`);
     showCommentsError("");
     renderComments();
   } catch (err) {
@@ -146,7 +146,7 @@ commentForm.addEventListener("submit", async (event) => {
   const submit = commentForm.querySelector("button[type=submit]");
   submit.disabled = true;
   try {
-    await api(`/api/tickets/${encodeURIComponent(id)}/comments`, {
+    await api(`/api/tasks/${encodeURIComponent(id)}/comments`, {
       method: "POST",
       body: { body: commentForm.elements.body.value },
     });
@@ -174,7 +174,7 @@ function renderBlocked(t) {
 blockForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    render(await api(`/api/tickets/${encodeURIComponent(id)}/block`, { method: "POST", body: { reason: blockForm.elements.reason.value } }));
+    render(await api(`/api/tasks/${encodeURIComponent(id)}/block`, { method: "POST", body: { reason: blockForm.elements.reason.value } }));
     blockForm.reset();
     show("");
   } catch (err) { show(err.message); }
@@ -182,26 +182,26 @@ blockForm.addEventListener("submit", async (e) => {
 
 unblockBtn.addEventListener("click", async () => {
   try {
-    render(await api(`/api/tickets/${encodeURIComponent(id)}/unblock`, { method: "POST" }));
+    render(await api(`/api/tasks/${encodeURIComponent(id)}/unblock`, { method: "POST" }));
     show("");
   } catch (err) { show(err.message); }
 });
 const linkForm = document.getElementById("link-form");
 const relatedSearchForm = document.getElementById("related-search-form");
 
-function renderRelatedTickets(t) {
+function renderRelatedTasks(t) {
   const section = document.getElementById("related-section");
-  const list = document.getElementById("related-tickets");
-  const noRelated = document.getElementById("no-related-tickets");
+  const list = document.getElementById("related-tasks");
+  const noRelated = document.getElementById("no-related-tasks");
   const searchResults = document.getElementById("related-search-results");
   const archived = t.status === "archived";
   section.hidden = false;
-  noRelated.hidden = t.related_tickets.length > 0;
+  noRelated.hidden = t.related_tasks.length > 0;
   relatedSearchForm.hidden = archived;
-  list.replaceChildren(...t.related_tickets.map((related) => {
+  list.replaceChildren(...t.related_tasks.map((related) => {
     const li = document.createElement("li");
     const a = document.createElement("a");
-    a.href = `/ticket.html?id=${encodeURIComponent(related.id)}`;
+    a.href = `/task.html?id=${encodeURIComponent(related.id)}`;
     a.textContent = `${related.key}: ${related.title}`;
     li.append(a, ` (${STATUS_LABELS[related.status]})`);
     if (!archived && related.status !== "archived") {
@@ -212,7 +212,7 @@ function renderRelatedTickets(t) {
       btn.addEventListener("click", async () => {
         try {
           render(await api(
-            `/api/tickets/${encodeURIComponent(id)}/related/${related.id}`,
+            `/api/tasks/${encodeURIComponent(id)}/related/${related.id}`,
             { method: "DELETE" },
           ));
           show("");
@@ -222,9 +222,9 @@ function renderRelatedTickets(t) {
     }
     return li;
   }));
-  const relatedIds = new Set(t.related_tickets.map((related) => related.id));
+  const relatedIds = new Set(t.related_tasks.map((related) => related.id));
   searchResults.replaceChildren(...[...searchResults.children].filter((item) => {
-    return !relatedIds.has(Number(item.dataset.ticketId));
+    return !relatedIds.has(Number(item.dataset.taskId));
   }));
 }
 
@@ -233,16 +233,16 @@ relatedSearchForm.addEventListener("submit", async (e) => {
   const results = document.getElementById("related-search-results");
   try {
     const query = relatedSearchForm.elements.query.value.trim();
-    const matches = await api(`/api/tickets/search?q=${encodeURIComponent(query)}`);
-    const current = await api(`/api/tickets/${encodeURIComponent(id)}`);
-    const alreadyRelated = new Set(current.related_tickets.map((related) => related.id));
+    const matches = await api(`/api/tasks/search?q=${encodeURIComponent(query)}`);
+    const current = await api(`/api/tasks/${encodeURIComponent(id)}`);
+    const alreadyRelated = new Set(current.related_tasks.map((related) => related.id));
     results.replaceChildren(...matches
       .filter((match) => match.id !== Number(id) && !alreadyRelated.has(match.id))
       .map((match) => {
         const li = document.createElement("li");
-        li.dataset.ticketId = String(match.id);
+        li.dataset.taskId = String(match.id);
         const a = document.createElement("a");
-        a.href = `/ticket.html?id=${encodeURIComponent(match.id)}`;
+        a.href = `/task.html?id=${encodeURIComponent(match.id)}`;
         a.textContent = `${match.key}: ${match.title}`;
         const btn = document.createElement("button");
         btn.type = "button";
@@ -250,9 +250,9 @@ relatedSearchForm.addEventListener("submit", async (e) => {
         btn.addEventListener("click", async () => {
           btn.disabled = true;
           try {
-            render(await api(`/api/tickets/${encodeURIComponent(id)}/related`, {
+            render(await api(`/api/tasks/${encodeURIComponent(id)}/related`, {
               method: "POST",
-              body: { related_ticket_id: match.id },
+              body: { related_task_id: match.id },
             }));
             show("");
           } catch (err) {
@@ -289,7 +289,7 @@ function renderLinks(t) {
       btn.textContent = "Remove";
       btn.addEventListener("click", async () => {
         try {
-          render(await api(`/api/tickets/${encodeURIComponent(id)}/links/${l.id}`, { method: "DELETE" }));
+          render(await api(`/api/tasks/${encodeURIComponent(id)}/links/${l.id}`, { method: "DELETE" }));
           show("");
         } catch (err) { show(err.message); }
       });
@@ -318,10 +318,10 @@ function renderTags(t) {
     checkbox.addEventListener("change", async () => {
       checkbox.disabled = true;
       try {
-        const ticketPath = `/api/tickets/${encodeURIComponent(id)}/tags`;
+        const taskPath = `/api/tasks/${encodeURIComponent(id)}/tags`;
         const updated = checkbox.checked
-          ? await api(ticketPath, { method: "POST", body: { tag_id: tag.id } })
-          : await api(`${ticketPath}/${tag.id}`, { method: "DELETE" });
+          ? await api(taskPath, { method: "POST", body: { tag_id: tag.id } })
+          : await api(`${taskPath}/${tag.id}`, { method: "DELETE" });
         render(updated);
         show("");
       } catch (err) {
@@ -342,7 +342,7 @@ linkForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const body = { url: linkForm.elements.url.value, label: linkForm.elements.label.value };
   try {
-    render(await api(`/api/tickets/${encodeURIComponent(id)}/links`, { method: "POST", body }));
+    render(await api(`/api/tasks/${encodeURIComponent(id)}/links`, { method: "POST", body }));
     linkForm.reset();
     show("");
   } catch (err) { show(err.message); }
@@ -367,7 +367,7 @@ function render(t) {
     `Created by ${t.created_by.name} on ${t.created_at}. Last updated ${t.updated_at}.`;
   renderLinks(t);
   renderBlocked(t);
-  renderRelatedTickets(t);
+  renderRelatedTasks(t);
   renderTags(t);
   document.getElementById("history-section").hidden = false;
   document.getElementById("history").replaceChildren(...t.history.map((h) => {
@@ -381,7 +381,7 @@ function render(t) {
 
 if (id) {
   try {
-    render(await api(`/api/tickets/${encodeURIComponent(id)}`));
+    render(await api(`/api/tasks/${encodeURIComponent(id)}`));
     commentsSection.hidden = false;
     await loadComments();
   } catch (err) { show(err.message); }
@@ -404,11 +404,11 @@ form.addEventListener("submit", async (e) => {
   };
   try {
     if (id) {
-      render(await api(`/api/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body }));
+      render(await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body }));
       show("");
     } else {
-      const t = await api("/api/tickets", { method: "POST", body });
-      location.href = `/ticket.html?id=${t.id}`;
+      const t = await api("/api/tasks", { method: "POST", body });
+      location.href = `/task.html?id=${t.id}`;
     }
   } catch (err) { show(err.message); }
 });

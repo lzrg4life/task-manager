@@ -1,4 +1,4 @@
-import { initNavbar } from "./navbar.js";
+import { initNavbar } from "./navbar.js?v=2";
 
 export const STATUS_LABELS = {
   archived: "Archived", completed: "Completed", in_review: "In Review", active: "Active",
@@ -25,10 +25,10 @@ export function td(text, className) {
   return el;
 }
 
-export function ticketRow(t, extra) {
+export function taskRow(t, extra) {
   const tr = document.createElement("tr");
   const link = document.createElement("a");
-  link.href = `/ticket.html?id=${t.id}`;
+  link.href = `/task.html?id=${t.id}`;
   link.textContent = t.key;
   const idCell = document.createElement("td");
   idCell.append(link);
@@ -53,7 +53,7 @@ export function ticketRow(t, extra) {
   return tr;
 }
 
-export function ticketTable(rows, extraHeader) {
+export function taskTable(rows, extraHeader) {
   const table = document.createElement("table");
   const head = document.createElement("thead");
   const hr = document.createElement("tr");
