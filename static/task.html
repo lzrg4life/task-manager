@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Task – Task Manager</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="/css/app.css?v=6">
+  <link rel="stylesheet" href="/css/app.css?v=7">
 </head>
 <body>
   <main class="card wide fixed-head">
@@ -14,20 +14,28 @@
     </div>
     <div class="scroll-body">
     <p id="error" class="error" role="alert" hidden></p>
+    <div class="task-layout">
+    <nav class="task-nav" aria-label="Sections">
+      <a href="#sec-title">Title</a>
+      <a href="#sec-details">Details</a>
+      <a href="#sec-business">Business requirements</a>
+      <a href="#sec-technical">Technical requirements</a>
+      <a href="#sec-notes">Implementation notes</a>
+      <a href="#comments-section">Comments</a>
+      <a href="#blocked-section">Blocked</a>
+      <a href="#tags-section">Tags</a>
+      <a href="#links-section">Links</a>
+      <a href="#related-section">Related tasks</a>
+      <a href="#history-section">History</a>
+    </nav>
+    <div class="task-main">
     <form id="task-form">
       <p><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></p>
-      <label>Title <input type="text" name="title" maxlength="200" required></label>
-      <div class="grid">
-        <label>Expected by date <input type="date" name="expected_by_date"></label>
-        <label>Status <select name="status"></select></label>
-        <label>Priority <select name="priority"></select></label>
-        <label>Reviewer <select name="reviewer_id"></select></label>
-        <label>Implementer <select name="implementer_id"></select></label>
-      </div>
-      <label>Details <textarea name="details" rows="4"></textarea></label>
-      <label>Business requirements <textarea name="business_requirements" rows="4"></textarea></label>
-      <label>Technical requirements <textarea name="technical_requirements" rows="4"></textarea></label>
-      <label>Implementation notes <textarea name="implementation_notes" rows="4"></textarea></label>
+      <label id="sec-title">Title <input type="text" name="title" maxlength="200" required></label>
+      <label id="sec-details">Details <textarea name="details" rows="4"></textarea></label>
+      <label id="sec-business">Business requirements <textarea name="business_requirements" rows="4"></textarea></label>
+      <label id="sec-technical">Technical requirements <textarea name="technical_requirements" rows="4"></textarea></label>
+      <label id="sec-notes">Implementation notes <textarea name="implementation_notes" rows="4"></textarea></label>
       <p id="meta"></p>
     </form>
     <section id="comments-section" class="list" hidden>
@@ -79,7 +87,25 @@
       <table><thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody id="history"></tbody></table>
     </section>
     </div>
+    <aside class="task-side">
+      <label>Expected by date <input type="date" name="expected_by_date" form="task-form"></label>
+      <label>Status <select name="status" form="task-form"></select></label>
+      <label>Priority <select name="priority" form="task-form"></select></label>
+      <label>Reviewer <select name="reviewer_id" form="task-form"></select></label>
+      <label>Implementer <select name="implementer_id" form="task-form"></select></label>
+    </aside>
+    </div>
+    </div>
   </main>
+  <script>
+    const nav = document.querySelector(".task-nav");
+    const sync = () => nav.querySelectorAll("a[href^='#']").forEach(a => {
+      const t = document.querySelector(a.getAttribute("href"));
+      a.hidden = !t || t.hidden;
+    });
+    sync();
+    new MutationObserver(sync).observe(document.querySelector(".task-main"), { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+  </script>
   <script type="module" src="/js/task.js?v=3"></script>
 </body>
 </html>
