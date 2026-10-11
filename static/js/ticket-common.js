@@ -33,6 +33,13 @@ export function ticketRow(t, extra) {
   const idCell = document.createElement("td");
   idCell.append(link);
   const titleCell = td(t.title);
+  if (t.blocked) {
+    const blocked = document.createElement("span");
+    blocked.className = "badge";
+    blocked.textContent = "Blocked";
+    blocked.title = t.blocked_reason;
+    titleCell.append(" ", blocked);
+  }
   for (const tag of t.tags || []) {
     const badge = document.createElement("span");
     badge.className = "badge";

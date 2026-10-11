@@ -34,7 +34,33 @@ function ensureUserOption(select, u) {
   }
 }
 
-const FIELD_LABELS = { link_added: "Link added", link_removed: "Link removed" };
+const FIELD_LABELS = { link_added: "Link added", link_removed: "Link removed", blocked: "Blocked", unblocked: "Unblocked" };
+const blockForm = document.getElementById("block-form");
+const unblockBtn = document.getElementById("unblock-btn");
+
+function renderBlocked(t) {
+  const archived = t.status === "archived";
+  document.getElementById("blocked-section").hidden = false;
+  document.getElementById("blocked-note").textContent = t.blocked ? `Blocked: ${t.blocked_reason}` : "Not blocked.";
+  blockForm.hidden = t.blocked || archived;
+  unblockBtn.hidden = !t.blocked || archived;
+}
+
+blockForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    render(await api(`/api/tickets/${encodeURIComponent(id)}/block`, { method: "POST", body: { reason: blockForm.elements.reason.value } }));
+    blockForm.reset();
+    show("");
+  } catch (err) { show(err.message); }
+});
+
+unblockBtn.addEventListener("click", async () => {
+  try {
+    render(await api(`/api/tickets/${encodeURIComponent(id)}/unblock`, { method: "POST" }));
+    show("");
+  } catch (err) { show(err.message); }
+});
 const linkForm = document.getElementById("link-form");
 const relatedSearchForm = document.getElementById("related-search-form");
 
@@ -215,6 +241,7 @@ function render(t) {
   document.getElementById("meta").textContent =
     `Created by ${t.created_by.name} on ${t.created_at}. Last updated ${t.updated_at}.`;
   renderLinks(t);
+  renderBlocked(t);
   renderRelatedTickets(t);
   renderTags(t);
   document.getElementById("history-section").hidden = false;

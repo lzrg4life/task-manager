@@ -104,6 +104,8 @@ pub struct TicketSummary {
     title: String,
     status: Status,
     priority: Priority,
+    blocked: bool,
+    blocked_reason: Option<String>,
     reviewer: Option<UserRef>,
     implementer: Option<UserRef>,
     tags: Vec<TagOut>,
@@ -153,6 +155,7 @@ struct TicketRow {
     implementation_notes: String,
     status: String,
     priority: String,
+    blocked_reason: Option<String>,
     created_at: String,
     updated_at: String,
     created_by: i64,
@@ -198,7 +201,7 @@ struct TicketTagRow {
 }
 
 const SELECT_TICKET: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
-    t.technical_requirements, t.implementation_notes, t.status, t.priority, t.created_at, \
+    t.technical_requirements, t.implementation_notes, t.status, t.priority, t.blocked_reason, t.created_at, \
     t.updated_at, t.created_by, cb.email AS cb_email, cb.display_name AS cb_name, \
     t.reviewer_id, rv.email AS rv_email, rv.display_name AS rv_name, \
     t.implementer_id, im.email AS im_email, im.display_name AS im_name \
@@ -229,6 +232,8 @@ fn summary_of(r: &TicketRow, tags: Vec<TagOut>) -> AppResult<TicketSummary> {
         title: r.title.clone(),
         status: Status::parse(&r.status)?,
         priority: Priority::parse(&r.priority)?,
+        blocked: r.blocked_reason.is_some(),
+        blocked_reason: r.blocked_reason.clone(),
         reviewer: optional_ref(r.reviewer_id, r.rv_email.clone(), r.rv_name.clone()),
         implementer: optional_ref(r.implementer_id, r.im_email.clone(), r.im_name.clone()),
         tags,
@@ -888,6 +893,71 @@ async fn ensure_editable(pool: &SqlitePool, id: i64) -> AppResult<()> {
         ));
     }
     Ok(())
+}
+
+const MAX_BLOCK_REASON: usize = 500;
+
+#[derive(Deserialize)]
+pub struct BlockReq {
+    reason: String,
+}
+
+pub async fn block(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(req): Json<BlockReq>,
+) -> AppResult<Json<TicketOut>> {
+    let reason = req.reason.trim();
+    if reason.is_empty() || reason.chars().count() > MAX_BLOCK_REASON {
+        return Err(AppError::BadRequest(format!(
+            "reason must be 1-{MAX_BLOCK_REASON} characters"
+        )));
+    }
+    ensure_editable(&state.pool, id).await?;
+    let mut tx = state.pool.begin().await?;
+    let changed = sqlx::query(
+        "UPDATE tickets SET blocked_reason = ?, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+         WHERE id = ? AND blocked_reason IS NULL",
+    )
+    .bind(reason)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if changed == 0 {
+        return Err(AppError::Conflict("ticket is already blocked".into()));
+    }
+    record_history(&mut tx, id, "blocked", None, reason, user.id).await?;
+    tx.commit().await?;
+    Ok(Json(fetch_ticket(&state.pool, id).await?))
+}
+
+pub async fn unblock(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> AppResult<Json<TicketOut>> {
+    ensure_editable(&state.pool, id).await?;
+    let mut tx = state.pool.begin().await?;
+    let reason: Option<String> =
+        sqlx::query_scalar("SELECT blocked_reason FROM tickets WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(AppError::NotFound)?;
+    let reason = reason.ok_or_else(|| AppError::Conflict("ticket is not blocked".into()))?;
+    sqlx::query(
+        "UPDATE tickets SET blocked_reason = NULL, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    record_history(&mut tx, id, "unblocked", Some(&reason), None, user.id).await?;
+    tx.commit().await?;
+    Ok(Json(fetch_ticket(&state.pool, id).await?))
 }
 
 pub async fn add_link(

@@ -30,6 +30,8 @@ pub fn api_router() -> Router<AppState> {
             get(tickets::get_one).patch(tickets::update),
         )
         .route("/tickets/{id}/move", post(tickets::move_ticket))
+        .route("/tickets/{id}/block", post(tickets::block))
+        .route("/tickets/{id}/unblock", post(tickets::unblock))
         .route("/tickets/{id}/links", post(tickets::add_link))
         .route(
             "/tickets/{id}/links/{link_id}",

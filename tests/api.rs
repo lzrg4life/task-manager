@@ -695,6 +695,94 @@ async fn ticket_links_add_remove_and_history() {
 }
 
 #[tokio::test]
+async fn ticket_block_unblock_and_history() {
+    let app = setup().await;
+    let t = admin_token(&app).await;
+    call(
+        &app,
+        "POST",
+        "/api/tickets",
+        Some(&t),
+        Some(json!({"title": "A"})),
+    )
+    .await;
+    let block = "/api/tickets/1/block";
+    let unblock = "/api/tickets/1/unblock";
+
+    let (s, _) = call(&app, "POST", unblock, Some(&t), None).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+    for bad in ["", "   "] {
+        let (s, _) = call(&app, "POST", block, Some(&t), Some(json!({"reason": bad}))).await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+    }
+    let (s, _) = call(&app, "POST", block, None, Some(json!({"reason": "x"}))).await;
+    assert_eq!(s, StatusCode::UNAUTHORIZED);
+
+    let (s, r) = call(
+        &app,
+        "POST",
+        block,
+        Some(&t),
+        Some(json!({"reason": " Waiting on API "})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(
+        (r["blocked"].as_bool(), r["blocked_reason"].as_str()),
+        (Some(true), Some("Waiting on API"))
+    );
+    let last = r["history"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(
+        (last["field"].as_str(), last["new_value"].as_str()),
+        (Some("blocked"), Some("Waiting on API"))
+    );
+    let (s, _) = call(
+        &app,
+        "POST",
+        block,
+        Some(&t),
+        Some(json!({"reason": "again"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+
+    // statuses can still change while blocked, and the flag persists
+    let (s, r) = call(
+        &app,
+        "PATCH",
+        "/api/tickets/1",
+        Some(&t),
+        Some(json!({"status": "active"})),
+    )
+    .await;
+    assert_eq!((s, r["blocked"].as_bool()), (StatusCode::OK, Some(true)));
+    let (_, r) = call(&app, "GET", "/api/tickets", Some(&t), None).await;
+    assert_eq!(r[2]["tickets"][0]["blocked"], true);
+
+    let (s, r) = call(&app, "POST", unblock, Some(&t), None).await;
+    assert_eq!((s, r["blocked"].as_bool()), (StatusCode::OK, Some(false)));
+    assert!(r["blocked_reason"].is_null());
+    let last = r["history"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(
+        (last["field"].as_str(), last["old_value"].as_str()),
+        (Some("unblocked"), Some("Waiting on API"))
+    );
+    assert!(last["new_value"].is_null());
+
+    // archived tickets are read-only
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/1",
+        Some(&t),
+        Some(json!({"status": "archived"})),
+    )
+    .await;
+    let (s, _) = call(&app, "POST", block, Some(&t), Some(json!({"reason": "x"}))).await;
+    assert_eq!(s, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn users_can_search_relate_and_unrelate_tickets() {
     let app = setup().await;
     let admin = admin_token(&app).await;

@@ -10,8 +10,8 @@ Add changes as new numbered migration files; never edit an applied one.
 Migration 0004 converts existing `admin` memberships to `is_admin = 1` and removes the obsolete role tables.
 
 ## Tickets (migration 0002)
-- `tickets` (id, title, details, business_requirements, technical_requirements, implementation_notes, status, priority, created_by, reviewer_id, implementer_id, created_at, updated_at) – status/priority constrained by CHECK; user-friendly key `TM-<id>` is derived from id
-- `ticket_history` (id, ticket_id, field `status|priority|link_added|link_removed` [widened in 0003], old_value (NULL on creation/link add), new_value (NULL on link removal), changed_by, changed_at)
+- `tickets` (id, title, details, business_requirements, technical_requirements, implementation_notes, status, priority, created_by, reviewer_id, implementer_id, blocked_reason, created_at, updated_at) – status/priority constrained by CHECK; `blocked_reason` is NULL when not blocked and the reason text when blocked (added in 0008); user-friendly key `TM-<id>` is derived from id
+- `ticket_history` (id, ticket_id, field `status|priority|link_added|link_removed|blocked|unblocked` [widened in 0003, 0008], old_value (NULL on creation/link add/block), new_value (NULL on link removal/unblock), changed_by, changed_at)
 
 ## Ticket links (migration 0003)
 - `ticket_links` (id, ticket_id, url, label, created_by, created_at; unique on ticket_id+url) – zero or more per ticket; removal deletes the row, and the add/remove is kept in `ticket_history`
