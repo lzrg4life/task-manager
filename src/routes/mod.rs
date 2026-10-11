@@ -27,6 +27,10 @@ pub fn api_router() -> Router<AppState> {
         .route("/tasks/archived", get(tasks::list_archived))
         .route("/tasks/removed", get(tasks::list_removed))
         .route("/tasks/{id}", get(tasks::get_one).patch(tasks::update))
+        .route(
+            "/tasks/{id}/edit-lock",
+            post(tasks::acquire_edit_lock).delete(tasks::release_edit_lock),
+        )
         .route("/tasks/{id}/move", post(tasks::move_task))
         .route(
             "/tasks/{id}/comments",

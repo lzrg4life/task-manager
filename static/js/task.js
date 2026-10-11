@@ -1,16 +1,26 @@
 import { api } from "./api.js";
 import { initPage, show, td, userName, STATUS_LABELS, PRIORITY_LABELS } from "./task-common.js?v=2";
 
-const currentUser = await initPage();
 const form = document.getElementById("task-form");
 const id = new URLSearchParams(location.search).get("id");
+const editButton = document.getElementById("edit-button");
+const saveButton = document.getElementById("save-button");
+for (const el of form.elements) el.disabled = Boolean(id);
+saveButton.hidden = Boolean(id);
+const cancelEditButton = document.getElementById("cancel-edit-button");
+const clearEditLockButton = document.getElementById("clear-edit-lock-button");
+const editLockNote = document.getElementById("edit-lock-note");
 const TEXT_FIELDS = ["title", "details", "business_requirements", "technical_requirements", "implementation_notes"];
+let task = null;
+let isEditing = !id;
 const commentsSection = document.getElementById("comments-section");
 const commentsList = document.getElementById("comments");
 const commentsError = document.getElementById("comments-error");
 const commentForm = document.getElementById("comment-form");
 let comments = [];
 let editingCommentId = null;
+let statusOnlyEditing = false;
+const currentUser = await initPage();
 
 function fillOptions(select, entries) {
   select.replaceChildren(...entries.map(([value, label]) => {
@@ -349,6 +359,7 @@ linkForm.addEventListener("submit", async (e) => {
 });
 
 function render(t) {
+  task = t;
   document.getElementById("heading").textContent = `${t.key}: ${t.title}`;
   document.title = `${t.key} – Task Manager`;
   for (const f of TEXT_FIELDS) form.elements[f].value = t[f];
@@ -360,10 +371,24 @@ function render(t) {
   form.elements.reviewer_id.value = t.reviewer ? String(t.reviewer.id) : "";
   form.elements.implementer_id.value = t.implementer ? String(t.implementer.id) : "";
   const archived = t.status === "archived";
+  const ownsLock = t.editing_user?.id === currentUser.id;
+  isEditing = ownsLock;
+  const editable = isEditing && !archived;
   for (const el of form.elements) {
-    if (el.name && el.name !== "status") el.disabled = archived;
+    el.disabled = !editable && !(statusOnlyEditing && el.name === "status");
   }
   document.getElementById("readonly-note").hidden = !archived;
+  editButton.textContent = archived ? "Change status" : "Edit task";
+  editButton.hidden = !id || editable || Boolean(t.editing_user) || (archived && statusOnlyEditing);
+  editButton.disabled = false;
+  saveButton.hidden = Boolean(id) && !editable && !statusOnlyEditing;
+  saveButton.disabled = !editable && !statusOnlyEditing && Boolean(id);
+  cancelEditButton.hidden = !editable && !statusOnlyEditing;
+  clearEditLockButton.hidden = !id || !t.editing_user || !currentUser.is_admin;
+  editLockNote.hidden = !t.editing_user || ownsLock;
+  editLockNote.textContent = t.editing_user
+    ? `Being edited by ${t.editing_user.name}.`
+    : "";
   document.getElementById("meta").textContent =
     `Created by ${t.created_by.name} on ${t.created_at}. Last updated ${t.updated_at}.`;
   renderLinks(t);
@@ -380,6 +405,53 @@ function render(t) {
   }));
 }
 
+editButton.addEventListener("click", async () => {
+  if (task?.status === "archived") {
+    statusOnlyEditing = true;
+    render(task);
+    return;
+  }
+  editButton.disabled = true;
+  try {
+    render(await api(`/api/tasks/${encodeURIComponent(id)}/edit-lock`, { method: "POST" }));
+    show("");
+  } catch (err) {
+    show(err.message);
+    try {
+      render(await api(`/api/tasks/${encodeURIComponent(id)}`));
+    } catch (refreshError) {
+      show(refreshError.message);
+    }
+  } finally {
+    editButton.disabled = false;
+  }
+});
+
+cancelEditButton.addEventListener("click", async () => {
+  if (statusOnlyEditing) {
+    statusOnlyEditing = false;
+    render(task);
+    show("");
+    return;
+  }
+  try {
+    render(await api(`/api/tasks/${encodeURIComponent(id)}/edit-lock`, { method: "DELETE" }));
+    show("");
+  } catch (err) {
+    show(err.message);
+  }
+});
+
+clearEditLockButton.addEventListener("click", async () => {
+  if (!confirm("Clear the edit lock? The current editor will not be able to save.")) return;
+  try {
+    render(await api(`/api/tasks/${encodeURIComponent(id)}/edit-lock`, { method: "DELETE" }));
+    show("");
+  } catch (err) {
+    show(err.message);
+  }
+});
+
 if (id) {
   try {
     render(await api(`/api/tasks/${encodeURIComponent(id)}`));
@@ -391,8 +463,7 @@ if (id) {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   const toId = (v) => (v === "" ? null : Number(v));
-  const archived = form.elements.title.disabled;
-  const body = archived ? { status: form.elements.status.value } : {
+  const body = statusOnlyEditing ? { status: form.elements.status.value } : {
     title: form.elements.title.value,
     expected_by_date: form.elements.expected_by_date.value || null,
     details: form.elements.details.value,
@@ -406,11 +477,28 @@ form.addEventListener("submit", async (e) => {
   };
   try {
     if (id) {
+      statusOnlyEditing = false;
       render(await api(`/api/tasks/${encodeURIComponent(id)}`, { method: "PATCH", body }));
       show("");
     } else {
       const t = await api("/api/tasks", { method: "POST", body });
       location.href = `/task.html?id=${t.id}`;
     }
-  } catch (err) { show(err.message); }
+  } catch (err) {
+    show(err.message);
+    if (id) {
+      const draft = Object.fromEntries([...form.elements]
+        .filter((el) => el.name)
+        .map((el) => [el.name, el.value]));
+      try {
+        render(await api(`/api/tasks/${encodeURIComponent(id)}`));
+        for (const [name, value] of Object.entries(draft)) {
+          if (form.elements[name]) form.elements[name].value = value;
+        }
+        show(err.message);
+      } catch (refreshError) {
+        show(refreshError.message);
+      }
+    }
+  }
 });

@@ -10,7 +10,12 @@
   <main class="card wide fixed-head">
     <div class="row">
       <h1 id="heading">New task</h1>
-      <span><button type="submit" form="task-form" style="min-width: 8rem">Save</button></span>
+      <span>
+        <button type="button" id="edit-button" style="min-width: 8rem" hidden>Edit task</button>
+        <button type="submit" id="save-button" form="task-form" style="min-width: 8rem" hidden>Save</button>
+        <button type="button" id="cancel-edit-button" class="secondary" hidden>Cancel</button>
+        <button type="button" id="clear-edit-lock-button" class="secondary" hidden>Clear edit lock</button>
+      </span>
     </div>
     <div class="scroll-body">
     <p id="error" class="error" role="alert" hidden></p>
@@ -31,11 +36,12 @@
     <div class="task-main">
     <form id="task-form">
       <p><span id="readonly-note" class="badge" hidden>Archived – read-only (change status to restore)</span></p>
-      <label id="sec-title">Title <input type="text" name="title" maxlength="200" required></label>
-      <label id="sec-details">Details <textarea name="details" rows="4"></textarea></label>
-      <label id="sec-business">Business requirements <textarea name="business_requirements" rows="4"></textarea></label>
-      <label id="sec-technical">Technical requirements <textarea name="technical_requirements" rows="4"></textarea></label>
-      <label id="sec-notes">Implementation notes <textarea name="implementation_notes" rows="4"></textarea></label>
+      <p id="edit-lock-note" class="badge" hidden></p>
+      <label id="sec-title">Title <input type="text" name="title" maxlength="200" required disabled></label>
+      <label id="sec-details">Details <textarea name="details" rows="4" disabled></textarea></label>
+      <label id="sec-business">Business requirements <textarea name="business_requirements" rows="4" disabled></textarea></label>
+      <label id="sec-technical">Technical requirements <textarea name="technical_requirements" rows="4" disabled></textarea></label>
+      <label id="sec-notes">Implementation notes <textarea name="implementation_notes" rows="4" disabled></textarea></label>
       <p id="meta"></p>
     </form>
     <section id="comments-section" class="list" hidden>
@@ -88,11 +94,11 @@
     </section>
     </div>
     <aside class="task-side">
-      <label>Expected by date <input type="date" name="expected_by_date" form="task-form"></label>
-      <label>Status <select name="status" form="task-form"></select></label>
-      <label>Priority <select name="priority" form="task-form"></select></label>
-      <label>Reviewer <select name="reviewer_id" form="task-form"></select></label>
-      <label>Implementer <select name="implementer_id" form="task-form"></select></label>
+      <label>Expected by date <input type="date" name="expected_by_date" form="task-form" disabled></label>
+      <label>Status <select name="status" form="task-form" disabled></select></label>
+      <label>Priority <select name="priority" form="task-form" disabled></select></label>
+      <label>Reviewer <select name="reviewer_id" form="task-form" disabled></select></label>
+      <label>Implementer <select name="implementer_id" form="task-form" disabled></select></label>
     </aside>
     </div>
     </div>
@@ -106,6 +112,6 @@
     sync();
     new MutationObserver(sync).observe(document.querySelector(".task-main"), { subtree: true, attributes: true, attributeFilter: ["hidden"] });
   </script>
-  <script type="module" src="/js/task.js?v=3"></script>
+  <script type="module" src="/js/task.js?v=4"></script>
 </body>
 </html>

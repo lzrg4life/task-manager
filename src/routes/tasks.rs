@@ -134,6 +134,7 @@ pub struct LinkOut {
 pub struct TaskOut {
     #[serde(flatten)]
     summary: TaskSummary,
+    editing_user: Option<UserRef>,
     details: String,
     business_requirements: String,
     technical_requirements: String,
@@ -169,6 +170,9 @@ struct TaskRow {
     implementer_id: Option<i64>,
     im_email: Option<String>,
     im_name: Option<String>,
+    editing_user_id: Option<i64>,
+    editor_email: Option<String>,
+    editor_name: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -207,10 +211,12 @@ const SELECT_TASK: &str = "SELECT t.id, t.title, t.details, t.business_requireme
     t.blocked_reason, t.created_at, \
     t.updated_at, t.created_by, cb.email AS cb_email, cb.display_name AS cb_name, \
     t.reviewer_id, rv.email AS rv_email, rv.display_name AS rv_name, \
-    t.implementer_id, im.email AS im_email, im.display_name AS im_name \
+    t.implementer_id, im.email AS im_email, im.display_name AS im_name, \
+    t.editing_user_id, editor.email AS editor_email, editor.display_name AS editor_name \
     FROM tasks t JOIN users cb ON cb.id = t.created_by \
     LEFT JOIN users rv ON rv.id = t.reviewer_id \
-    LEFT JOIN users im ON im.id = t.implementer_id";
+    LEFT JOIN users im ON im.id = t.implementer_id \
+    LEFT JOIN users editor ON editor.id = t.editing_user_id";
 
 fn user_ref(id: i64, email: String, name: String) -> UserRef {
     let name = if name.trim().is_empty() {
@@ -346,6 +352,7 @@ async fn fetch_task(pool: &SqlitePool, id: i64) -> AppResult<TaskOut> {
     let related_tasks = summaries_of(pool, related_rows).await?;
     Ok(TaskOut {
         summary: summary_of(&r, tags)?,
+        editing_user: optional_ref(r.editing_user_id, r.editor_email, r.editor_name),
         details: r.details,
         business_requirements: r.business_requirements,
         technical_requirements: r.technical_requirements,
@@ -507,6 +514,75 @@ pub async fn get_one(
     _user: AuthUser,
     Path(id): Path<i64>,
 ) -> AppResult<Json<TaskOut>> {
+    Ok(Json(fetch_task(&state.pool, id).await?))
+}
+
+pub async fn acquire_edit_lock(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> AppResult<Json<TaskOut>> {
+    let result = sqlx::query(
+        "UPDATE tasks SET editing_user_id = ? \
+         WHERE id = ? AND status != 'archived' \
+         AND (editing_user_id IS NULL OR editing_user_id = ?)",
+    )
+    .bind(user.id)
+    .bind(id)
+    .bind(user.id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        let task = fetch_row(&state.pool, id).await?;
+        if task.status == "archived" {
+            return Err(AppError::Conflict("archived tasks are read-only".into()));
+        }
+        let Some(editor) = optional_ref(task.editing_user_id, task.editor_email, task.editor_name)
+        else {
+            return Err(AppError::Conflict(
+                "the task changed before the edit lock could be acquired".into(),
+            ));
+        };
+        return Err(AppError::Conflict(format!(
+            "task is being edited by {}",
+            editor.name
+        )));
+    }
+
+    Ok(Json(fetch_task(&state.pool, id).await?))
+}
+
+pub async fn release_edit_lock(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> AppResult<Json<TaskOut>> {
+    let result = if user.is_admin {
+        sqlx::query("UPDATE tasks SET editing_user_id = NULL WHERE id = ?")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+    } else {
+        sqlx::query(
+            "UPDATE tasks SET editing_user_id = NULL \
+             WHERE id = ? AND editing_user_id = ?",
+        )
+        .bind(id)
+        .bind(user.id)
+        .execute(&state.pool)
+        .await?
+    };
+
+    if result.rows_affected() == 0 {
+        let task = fetch_row(&state.pool, id).await?;
+        if task.editing_user_id.is_some() && !user.is_admin {
+            return Err(AppError::Conflict(
+                "only the editor or an admin can clear the edit lock".into(),
+            ));
+        }
+    }
+
     Ok(Json(fetch_task(&state.pool, id).await?))
 }
 
@@ -738,6 +814,20 @@ pub async fn update(
         || req.priority.is_some()
         || req.reviewer_id.is_some()
         || req.implementer_id.is_some();
+    let unlocked_status_change = !non_status_edit
+        && req.status.is_some()
+        && (req.status == Some(Status::Archived) || cur_status == Status::Archived);
+    if unlocked_status_change {
+        if cur.editing_user_id.is_some() {
+            return Err(AppError::Conflict(
+                "task is being edited; try again after the edit lock is released".into(),
+            ));
+        }
+    } else if cur.editing_user_id != Some(user.id) {
+        return Err(AppError::Conflict(
+            "you must hold the task edit lock before saving".into(),
+        ));
+    }
     if cur_status == Status::Archived && non_status_edit {
         return Err(AppError::Conflict(
             "archived tasks are read-only; change the status to restore it first".into(),
@@ -784,11 +874,14 @@ pub async fn update(
     }
 
     let mut tx = state.pool.begin().await?;
-    sqlx::query(
+    let update_result = sqlx::query(
         "UPDATE tasks SET title = ?, details = ?, business_requirements = ?, \
          technical_requirements = ?, implementation_notes = ?, status = ?, priority = ?, \
          expected_by_date = ?, reviewer_id = ?, implementer_id = ?, \
-         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
+         editing_user_id = NULL, \
+         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+         WHERE id = ? AND ((? AND editing_user_id IS NULL) OR \
+                           (NOT ? AND editing_user_id = ?))",
     )
     .bind(&title)
     .bind(&details)
@@ -801,8 +894,16 @@ pub async fn update(
     .bind(reviewer)
     .bind(implementer)
     .bind(id)
+    .bind(unlocked_status_change)
+    .bind(unlocked_status_change)
+    .bind(user.id)
     .execute(&mut *tx)
     .await?;
+    if update_result.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "the task edit lock changed before the task could be saved".into(),
+        ));
+    }
     if status != cur_status {
         record_history(
             &mut tx,
@@ -847,7 +948,13 @@ pub async fn move_task(
     Path(id): Path<i64>,
     Json(req): Json<MoveReq>,
 ) -> AppResult<Json<TaskOut>> {
-    let cur = Status::parse(&fetch_row(&state.pool, id).await?.status)?;
+    let row = fetch_row(&state.pool, id).await?;
+    if row.editing_user_id.is_some() {
+        return Err(AppError::Conflict(
+            "task is being edited; try again after the edit lock is released".into(),
+        ));
+    }
+    let cur = Status::parse(&row.status)?;
     let idx = BOARD
         .iter()
         .position(|s| *s == cur)
@@ -860,14 +967,19 @@ pub async fn move_task(
     .ok_or_else(|| AppError::BadRequest("cannot move further in that direction".into()))?;
 
     let mut tx = state.pool.begin().await?;
-    sqlx::query(
+    let updated = sqlx::query(
         "UPDATE tasks SET status = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
-         WHERE id = ?",
+         WHERE id = ? AND editing_user_id IS NULL",
     )
     .bind(target.as_str())
     .bind(id)
     .execute(&mut *tx)
     .await?;
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "task is being edited; try again after the edit lock is released".into(),
+        ));
+    }
     record_history(
         &mut tx,
         id,

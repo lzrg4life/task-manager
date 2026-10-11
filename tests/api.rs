@@ -82,6 +82,18 @@ async fn admin_token(app: &Router) -> String {
         .to_string()
 }
 
+async fn acquire_task_edit_lock(app: &Router, id: i64, token: &str) {
+    let (status, _) = call(
+        app,
+        "POST",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 #[tokio::test]
 async fn login_success_and_failure() {
     let app = setup().await;
@@ -482,6 +494,7 @@ async fn tasks_lifecycle() {
     );
 
     // edit, assign, history
+    acquire_task_edit_lock(&app, 2, &t).await;
     let (s, r) = call(
         &app,
         "PATCH",
@@ -493,6 +506,7 @@ async fn tasks_lifecycle() {
     assert_eq!(s, StatusCode::OK);
     assert_eq!(r["reviewer"]["id"], 1);
     assert_eq!(r["history"].as_array().unwrap().len(), 3);
+    acquire_task_edit_lock(&app, 2, &t).await;
     let (_, r) = call(
         &app,
         "PATCH",
@@ -505,6 +519,7 @@ async fn tasks_lifecycle() {
     assert_eq!(b["id"], 2);
 
     // archived: read-only except status; paged views
+    acquire_task_edit_lock(&app, 2, &t).await;
     call(
         &app,
         "PATCH",
@@ -530,6 +545,7 @@ async fn tasks_lifecycle() {
     )
     .await;
     assert_eq!(s, StatusCode::CONFLICT);
+    acquire_task_edit_lock(&app, 1, &t).await;
     let (s, _) = call(
         &app,
         "POST",
@@ -615,6 +631,198 @@ async fn tasks_lifecycle() {
 }
 
 #[tokio::test]
+async fn task_edit_lock_prevents_overlapping_saves_and_admin_can_clear_it() {
+    let app = setup().await;
+    let admin = admin_token(&app).await;
+    let (status, _created_bob) = call(
+        &app,
+        "POST",
+        "/api/users",
+        Some(&admin),
+        Some(json!({
+            "email": "bob@example.com",
+            "password": "correct-horse-battery",
+            "display_name": "Bob"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let bob = login(&app, "bob@example.com", "correct-horse-battery")
+        .await
+        .1["access_token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (status, task) = call(
+        &app,
+        "POST",
+        "/api/tasks",
+        Some(&admin),
+        Some(json!({"title": "Locked task"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = task["id"].as_i64().unwrap();
+    assert!(task["editing_user"].is_null());
+
+    let (status, locked) = call(
+        &app,
+        "POST",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(locked["editing_user"]["name"], "Administrator");
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/api/tasks/{id}/edit-lock"),
+            Some(&admin),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(&bob),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        call(
+            &app,
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&bob),
+            Some(json!({"status": "archived"})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        &format!("/api/tasks/{id}"),
+        Some(&bob),
+        Some(json!({"title": "Overwritten"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            &format!("/api/tasks/{id}/move"),
+            Some(&bob),
+            Some(json!({"direction": "up"})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            &format!("/api/tasks/{id}/edit-lock"),
+            Some(&bob),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (status, cleared) = call(
+        &app,
+        "DELETE",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(cleared["editing_user"].is_null());
+
+    let (status, locked) = call(
+        &app,
+        "POST",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(&bob),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(locked["editing_user"]["name"], "Bob");
+    let (status, cleared) = call(
+        &app,
+        "DELETE",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(cleared["editing_user"].is_null());
+    assert_eq!(
+        call(
+            &app,
+            "PATCH",
+            &format!("/api/tasks/{id}"),
+            Some(&bob),
+            Some(json!({"title": "Cleared lock save"})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    acquire_task_edit_lock(&app, id, &bob).await;
+    let (status, saved) = call(
+        &app,
+        "PATCH",
+        &format!("/api/tasks/{id}"),
+        Some(&bob),
+        Some(json!({"title": "Saved by Bob"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(saved["title"], "Saved by Bob");
+    assert!(saved["editing_user"].is_null());
+
+    acquire_task_edit_lock(&app, id, &bob).await;
+    let (status, released) = call(
+        &app,
+        "DELETE",
+        &format!("/api/tasks/{id}/edit-lock"),
+        Some(&bob),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(released["editing_user"].is_null());
+
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        &format!("/api/tasks/{id}"),
+        Some(&admin),
+        Some(json!({"title": "No lock"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn task_expected_by_date_is_optional_validated_and_clearable() {
     let app = setup().await;
     let t = admin_token(&app).await;
@@ -655,6 +863,7 @@ async fn task_expected_by_date_is_optional_validated_and_clearable() {
         assert_eq!(s, StatusCode::BAD_REQUEST, "{invalid_date}");
     }
 
+    acquire_task_edit_lock(&app, 2, &t).await;
     let (s, changed) = call(
         &app,
         "PATCH",
@@ -665,6 +874,7 @@ async fn task_expected_by_date_is_optional_validated_and_clearable() {
     .await;
     assert_eq!(s, StatusCode::OK);
     assert_eq!(changed["expected_by_date"], "2027-12-31");
+    acquire_task_edit_lock(&app, 2, &t).await;
     let (s, cleared) = call(
         &app,
         "PATCH",
@@ -676,6 +886,7 @@ async fn task_expected_by_date_is_optional_validated_and_clearable() {
     assert_eq!(s, StatusCode::OK);
     assert!(cleared["expected_by_date"].is_null());
 
+    acquire_task_edit_lock(&app, 2, &t).await;
     let (s, _) = call(
         &app,
         "PATCH",
@@ -685,6 +896,7 @@ async fn task_expected_by_date_is_optional_validated_and_clearable() {
     )
     .await;
     assert_eq!(s, StatusCode::BAD_REQUEST);
+    call(&app, "DELETE", "/api/tasks/2/edit-lock", Some(&t), None).await;
 
     call(
         &app,
@@ -1049,6 +1261,7 @@ async fn task_block_unblock_and_history() {
     assert_eq!(s, StatusCode::CONFLICT);
 
     // statuses can still change while blocked, and the flag persists
+    acquire_task_edit_lock(&app, 1, &t).await;
     let (s, r) = call(
         &app,
         "PATCH",
