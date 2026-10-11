@@ -1,7 +1,7 @@
 import { api } from "./api.js";
 import { initPage, show, taskRow, taskTable, STATUS_LABELS } from "./task-common.js";
 
-const currentUser = await initPage();
+await initPage();
 const board = document.getElementById("board");
 const taskSearch = document.getElementById("task-search");
 const taskAssignee = document.getElementById("task-assignee");
@@ -16,155 +16,6 @@ let taskToArchive = null;
 let taskLists = [];
 let assigneesLoaded = false;
 let tagsLoaded = false;
-const openComments = new Set();
-const commentsByTask = new Map();
-const loadingComments = new Set();
-const commentsErrors = new Map();
-const editingComments = new Map();
-
-function setCommentsError(taskId, message) {
-  commentsErrors.set(taskId, message);
-}
-
-async function loadComments(taskId) {
-  loadingComments.add(taskId);
-  commentsErrors.delete(taskId);
-  renderBoard();
-  try {
-    commentsByTask.set(taskId, await api(`/api/tasks/${taskId}/comments`));
-  } catch (err) {
-    setCommentsError(taskId, err.message);
-  } finally {
-    loadingComments.delete(taskId);
-    renderBoard();
-  }
-}
-
-function commentActionButton(label, handler) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "secondary small";
-  button.textContent = label;
-  button.addEventListener("click", handler);
-  return button;
-}
-
-function renderComments(taskId) {
-  const thread = document.createElement("div");
-  thread.className = "comment-thread";
-  if (loadingComments.has(taskId)) {
-    const loading = document.createElement("p");
-    loading.textContent = "Loading comments…";
-    thread.append(loading);
-  } else if (commentsErrors.has(taskId)) {
-    const error = document.createElement("p");
-    error.className = "error";
-    error.textContent = commentsErrors.get(taskId);
-    thread.append(error, commentActionButton("Retry", () => loadComments(taskId)));
-  } else {
-    for (const comment of commentsByTask.get(taskId) || []) {
-      const item = document.createElement("article");
-      item.className = "comment";
-      const meta = document.createElement("div");
-      meta.className = "comment-meta";
-      meta.textContent = `${comment.author_name} · ${comment.created_at}${comment.updated_at !== comment.created_at && !comment.deleted_at ? " (edited)" : ""}`;
-      item.append(meta);
-
-      if (comment.deleted_at) {
-        const deleted = document.createElement("p");
-        deleted.className = "comment-body";
-        deleted.textContent = "Comment deleted";
-        item.append(deleted);
-      } else if (editingComments.get(taskId) === comment.id) {
-        const form = document.createElement("form");
-        form.className = "comment-form";
-        const textarea = document.createElement("textarea");
-        textarea.maxLength = 5000;
-        textarea.required = true;
-        textarea.value = comment.body;
-        const actions = document.createElement("div");
-        actions.className = "comment-actions";
-        const save = document.createElement("button");
-        save.type = "submit";
-        save.textContent = "Save";
-        actions.append(save, commentActionButton("Cancel", () => {
-          editingComments.delete(taskId);
-          renderBoard();
-        }));
-        form.append(textarea, actions);
-        form.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          save.disabled = true;
-          try {
-            await api(`/api/tasks/${taskId}/comments/${comment.id}`, {
-              method: "PATCH",
-              body: { body: textarea.value },
-            });
-            editingComments.delete(taskId);
-            await loadComments(taskId);
-          } catch (err) {
-            setCommentsError(taskId, err.message);
-            renderBoard();
-          }
-        });
-        item.append(form);
-      } else {
-        const body = document.createElement("p");
-        body.className = "comment-body";
-        body.textContent = comment.body;
-        item.append(body);
-        if (comment.user_id === currentUser.id || currentUser.is_admin) {
-          const actions = document.createElement("div");
-          actions.className = "comment-actions";
-          actions.append(commentActionButton("Edit", () => {
-            editingComments.set(taskId, comment.id);
-            renderBoard();
-          }));
-          actions.append(commentActionButton("Delete", async () => {
-            if (!confirm("Delete this comment?")) return;
-            try {
-              await api(`/api/tasks/${taskId}/comments/${comment.id}`, { method: "DELETE" });
-              await loadComments(taskId);
-            } catch (err) {
-              setCommentsError(taskId, err.message);
-              renderBoard();
-            }
-          }));
-          item.append(actions);
-        }
-      }
-      thread.append(item);
-    }
-
-    const form = document.createElement("form");
-    form.className = "comment-form";
-    const textarea = document.createElement("textarea");
-    textarea.maxLength = 5000;
-    textarea.required = true;
-    textarea.placeholder = "Add a comment…";
-    const submit = document.createElement("button");
-    submit.type = "submit";
-    submit.textContent = "Add comment";
-    form.append(textarea, submit);
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      submit.disabled = true;
-      try {
-        await api(`/api/tasks/${taskId}/comments`, {
-          method: "POST",
-          body: { body: textarea.value },
-        });
-        await loadComments(taskId);
-      } catch (err) {
-        setCommentsError(taskId, err.message);
-        renderBoard();
-      }
-    });
-    thread.append(form);
-  }
-  return thread;
-}
-
 async function move(id, direction) {
   try {
     await api(`/api/tasks/${id}/move`, { method: "POST", body: { direction } });
@@ -266,7 +117,7 @@ function renderBoard() {
       section.append(body);
       return section;
     }
-    const rows = tasks.flatMap((t) => {
+    const rows = tasks.map((t) => {
       const cell = document.createElement("td");
       cell.className = "actions";
       cell.append(
@@ -276,30 +127,7 @@ function renderBoard() {
         " ",
         moveButton("↓", "Move down", i < taskLists.length - 1, () => move(t.id, "down")),
       );
-      const comments = commentActionButton(
-        openComments.has(t.id)
-          ? "Hide comments"
-          : `Comments${commentsByTask.has(t.id) ? ` (${commentsByTask.get(t.id).length})` : ""}`,
-        () => {
-          if (openComments.has(t.id)) {
-            openComments.delete(t.id);
-          } else {
-            openComments.add(t.id);
-            if (!commentsByTask.has(t.id)) void loadComments(t.id);
-          }
-          renderBoard();
-        },
-      );
-      cell.append(" ", comments);
-      const row = taskRow(t, cell);
-      if (!openComments.has(t.id)) return [row];
-      const commentsRow = document.createElement("tr");
-      commentsRow.className = "comments-row";
-      const commentsCell = document.createElement("td");
-      commentsCell.colSpan = 6;
-      commentsCell.append(renderComments(t.id));
-      commentsRow.append(commentsCell);
-      return [row, commentsRow];
+      return taskRow(t, cell);
     });
     body.append(taskTable(rows, true));
     section.append(body);
