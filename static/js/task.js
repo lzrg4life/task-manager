@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { initPage, show, td, userName, STATUS_LABELS, PRIORITY_LABELS } from "./task-common.js";
+import { initPage, show, td, userName, STATUS_LABELS, PRIORITY_LABELS } from "./task-common.js?v=2";
 
 const currentUser = await initPage();
 const form = document.getElementById("task-form");
@@ -352,6 +352,7 @@ function render(t) {
   document.getElementById("heading").textContent = `${t.key}: ${t.title}`;
   document.title = `${t.key} – Task Manager`;
   for (const f of TEXT_FIELDS) form.elements[f].value = t[f];
+  form.elements.expected_by_date.value = t.expected_by_date || "";
   form.elements.status.value = t.status;
   form.elements.priority.value = t.priority;
   ensureUserOption(form.elements.reviewer_id, t.reviewer);
@@ -393,6 +394,7 @@ form.addEventListener("submit", async (e) => {
   const archived = form.elements.title.disabled;
   const body = archived ? { status: form.elements.status.value } : {
     title: form.elements.title.value,
+    expected_by_date: form.elements.expected_by_date.value || null,
     details: form.elements.details.value,
     business_requirements: form.elements.business_requirements.value,
     technical_requirements: form.elements.technical_requirements.value,

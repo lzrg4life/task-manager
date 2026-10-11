@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { initPage, show, taskRow, taskTable, STATUS_LABELS } from "./task-common.js";
+import { initPage, show, taskRow, taskTable, STATUS_LABELS } from "./task-common.js?v=2";
 
 await initPage();
 const board = document.getElementById("board");

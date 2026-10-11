@@ -615,6 +615,97 @@ async fn tasks_lifecycle() {
 }
 
 #[tokio::test]
+async fn task_expected_by_date_is_optional_validated_and_clearable() {
+    let app = setup().await;
+    let t = admin_token(&app).await;
+    let (s, no_date) = call(
+        &app,
+        "POST",
+        "/api/tasks",
+        Some(&t),
+        Some(json!({"title": "No date"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED, "{no_date}");
+    assert!(no_date["expected_by_date"].is_null());
+
+    let (s, task) = call(
+        &app,
+        "POST",
+        "/api/tasks",
+        Some(&t),
+        Some(json!({"title": "Dated", "expected_by_date": "2028-02-29"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CREATED);
+    assert_eq!(task["expected_by_date"], "2028-02-29");
+
+    let (_, board) = call(&app, "GET", "/api/tasks", Some(&t), None).await;
+    assert_eq!(board[4]["tasks"][1]["expected_by_date"], "2028-02-29");
+
+    for invalid_date in ["", "2026-02-29", "2026-13-01", "2026-04-31", "2026/01/01"] {
+        let (s, _) = call(
+            &app,
+            "POST",
+            "/api/tasks",
+            Some(&t),
+            Some(json!({"title": "Invalid date", "expected_by_date": invalid_date})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST, "{invalid_date}");
+    }
+
+    let (s, changed) = call(
+        &app,
+        "PATCH",
+        "/api/tasks/2",
+        Some(&t),
+        Some(json!({"expected_by_date": "2027-12-31"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(changed["expected_by_date"], "2027-12-31");
+    let (s, cleared) = call(
+        &app,
+        "PATCH",
+        "/api/tasks/2",
+        Some(&t),
+        Some(json!({"expected_by_date": null})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert!(cleared["expected_by_date"].is_null());
+
+    let (s, _) = call(
+        &app,
+        "PATCH",
+        "/api/tasks/2",
+        Some(&t),
+        Some(json!({"expected_by_date": "2026-02-29"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::BAD_REQUEST);
+
+    call(
+        &app,
+        "PATCH",
+        "/api/tasks/2",
+        Some(&t),
+        Some(json!({"status": "archived"})),
+    )
+    .await;
+    let (s, _) = call(
+        &app,
+        "PATCH",
+        "/api/tasks/2",
+        Some(&t),
+        Some(json!({"expected_by_date": "2027-01-01"})),
+    )
+    .await;
+    assert_eq!(s, StatusCode::CONFLICT);
+}
+
+#[tokio::test]
 async fn task_comments_enforce_ownership_and_soft_delete() {
     let app = setup().await;
     let admin = admin_token(&app).await;

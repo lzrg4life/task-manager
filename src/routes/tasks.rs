@@ -102,6 +102,7 @@ pub struct TaskSummary {
     id: i64,
     key: String,
     title: String,
+    expected_by_date: Option<String>,
     status: Status,
     priority: Priority,
     blocked: bool,
@@ -155,6 +156,7 @@ struct TaskRow {
     implementation_notes: String,
     status: String,
     priority: String,
+    expected_by_date: Option<String>,
     blocked_reason: Option<String>,
     created_at: String,
     updated_at: String,
@@ -201,7 +203,8 @@ struct TaskTagRow {
 }
 
 const SELECT_TASK: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
-    t.technical_requirements, t.implementation_notes, t.status, t.priority, t.blocked_reason, t.created_at, \
+    t.technical_requirements, t.implementation_notes, t.status, t.priority, t.expected_by_date, \
+    t.blocked_reason, t.created_at, \
     t.updated_at, t.created_by, cb.email AS cb_email, cb.display_name AS cb_name, \
     t.reviewer_id, rv.email AS rv_email, rv.display_name AS rv_name, \
     t.implementer_id, im.email AS im_email, im.display_name AS im_name \
@@ -230,6 +233,7 @@ fn summary_of(r: &TaskRow, tags: Vec<TagOut>) -> AppResult<TaskSummary> {
         id: r.id,
         key: format!("TM-{}", r.id),
         title: r.title.clone(),
+        expected_by_date: r.expected_by_date.clone(),
         status: Status::parse(&r.status)?,
         priority: Priority::parse(&r.priority)?,
         blocked: r.blocked_reason.is_some(),
@@ -544,6 +548,7 @@ where
 #[derive(Deserialize)]
 pub struct NewTask {
     title: String,
+    expected_by_date: Option<String>,
     #[serde(default)]
     details: String,
     #[serde(default)]
@@ -561,6 +566,8 @@ pub struct NewTask {
 #[derive(Deserialize)]
 pub struct UpdateTask {
     title: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    expected_by_date: Option<Option<String>>,
     details: Option<String>,
     business_requirements: Option<String>,
     technical_requirements: Option<String>,
@@ -580,6 +587,36 @@ fn validate_title(t: &str) -> AppResult<()> {
         return Err(AppError::BadRequest(
             "title must be 1-200 characters".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_expected_by_date(date: &str) -> AppResult<()> {
+    let invalid =
+        || AppError::BadRequest("expected_by_date must be a valid YYYY-MM-DD date".into());
+    let bytes = date.as_bytes();
+    if bytes.len() != 10
+        || !bytes.iter().all(|b| b.is_ascii_digit() || *b == b'-')
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+    {
+        return Err(invalid());
+    }
+    let year = date[..4].parse::<u32>().map_err(|_| invalid())?;
+    let month = date[5..7].parse::<u32>().map_err(|_| invalid())?;
+    let day = date[8..10].parse::<u32>().map_err(|_| invalid())?;
+    if !(1..=9999).contains(&year) || !(1..=12).contains(&month) {
+        return Err(invalid());
+    }
+    let leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let days_in_month = match month {
+        2 if leap_year => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if !(1..=days_in_month).contains(&day) {
+        return Err(invalid());
     }
     Ok(())
 }
@@ -637,6 +674,9 @@ pub async fn create(
 ) -> AppResult<(StatusCode, Json<TaskOut>)> {
     let title = req.title.trim();
     validate_title(title)?;
+    if let Some(date) = &req.expected_by_date {
+        validate_expected_by_date(date)?;
+    }
     for (n, v) in [
         ("details", &req.details),
         ("business_requirements", &req.business_requirements),
@@ -653,8 +693,8 @@ pub async fn create(
     let mut tx = state.pool.begin().await?;
     let id = sqlx::query(
         "INSERT INTO tasks (title, details, business_requirements, technical_requirements, \
-         implementation_notes, status, priority, created_by, reviewer_id, implementer_id) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         implementation_notes, status, priority, expected_by_date, created_by, reviewer_id, \
+         implementer_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(title)
     .bind(&req.details)
@@ -663,6 +703,7 @@ pub async fn create(
     .bind(&req.implementation_notes)
     .bind(status.as_str())
     .bind(priority.as_str())
+    .bind(&req.expected_by_date)
     .bind(user.id)
     .bind(req.reviewer_id)
     .bind(req.implementer_id)
@@ -693,6 +734,7 @@ pub async fn update(
         || req.business_requirements.is_some()
         || req.technical_requirements.is_some()
         || req.implementation_notes.is_some()
+        || req.expected_by_date.is_some()
         || req.priority.is_some()
         || req.reviewer_id.is_some()
         || req.implementer_id.is_some();
@@ -714,6 +756,13 @@ pub async fn update(
     let business = pick(&req.business_requirements, &cur.business_requirements);
     let technical = pick(&req.technical_requirements, &cur.technical_requirements);
     let notes = pick(&req.implementation_notes, &cur.implementation_notes);
+    let expected_by_date = req
+        .expected_by_date
+        .clone()
+        .unwrap_or_else(|| cur.expected_by_date.clone());
+    if let Some(date) = &expected_by_date {
+        validate_expected_by_date(date)?;
+    }
     for (n, v) in [
         ("details", &details),
         ("business_requirements", &business),
@@ -738,7 +787,7 @@ pub async fn update(
     sqlx::query(
         "UPDATE tasks SET title = ?, details = ?, business_requirements = ?, \
          technical_requirements = ?, implementation_notes = ?, status = ?, priority = ?, \
-         reviewer_id = ?, implementer_id = ?, \
+         expected_by_date = ?, reviewer_id = ?, implementer_id = ?, \
          updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ?",
     )
     .bind(&title)
@@ -748,6 +797,7 @@ pub async fn update(
     .bind(&notes)
     .bind(status.as_str())
     .bind(priority.as_str())
+    .bind(&expected_by_date)
     .bind(reviewer)
     .bind(implementer)
     .bind(id)

@@ -48,7 +48,8 @@ export function taskRow(t, extra) {
     badge.title = tag.description;
     titleCell.append(" ", badge);
   }
-  tr.append(idCell, titleCell, td(PRIORITY_LABELS[t.priority]),
+  tr.append(idCell, titleCell, td(t.expected_by_date || ""),
+    td(PRIORITY_LABELS[t.priority]),
     td(userName(t.reviewer)), td(userName(t.implementer)));
   if (extra) tr.append(extra);
   return tr;
@@ -58,7 +59,7 @@ export function taskTable(rows, extraHeader) {
   const table = document.createElement("table");
   const head = document.createElement("thead");
   const hr = document.createElement("tr");
-  for (const h of ["ID", "Title", "Priority", "Reviewer", "Implementer", ...(extraHeader ? [""] : [])]) {
+  for (const h of ["ID", "Title", "Expected by", "Priority", "Reviewer", "Implementer", ...(extraHeader ? [""] : [])]) {
     const th = document.createElement("th");
     th.textContent = h;
     hr.append(th);

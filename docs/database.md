@@ -11,8 +11,8 @@ Migration 0004 converts existing `admin` memberships to `is_admin = 1` and remov
 
 Migration 0010 renames the task-related tables and foreign-key columns introduced by migrations 0002–0009; existing records and relationships are preserved. The earlier migrations remain unchanged as historical upgrade steps.
 
-## Tasks (migration 0010; originally created in 0002)
-- `tasks` (id, title, details, business_requirements, technical_requirements, implementation_notes, status, priority, created_by, reviewer_id, implementer_id, blocked_reason, created_at, updated_at) – status/priority constrained by CHECK; `blocked_reason` is NULL when not blocked and the reason text when blocked (added in 0008); user-friendly key `TM-<id>` is derived from id
+## Tasks (migration 0011; originally created in 0002)
+- `tasks` (id, title, expected_by_date, details, business_requirements, technical_requirements, implementation_notes, status, priority, created_by, reviewer_id, implementer_id, blocked_reason, created_at, updated_at) – `expected_by_date` is nullable and stores a calendar date as `YYYY-MM-DD`; status/priority constrained by CHECK; `blocked_reason` is NULL when not blocked and the reason text when blocked (added in 0008); user-friendly key `TM-<id>` is derived from id
 - `task_history` (id, task_id, field `status|priority|link_added|link_removed|blocked|unblocked` [widened in 0003, 0008], old_value (NULL on creation/link add/block), new_value (NULL on link removal/unblock), changed_by, changed_at)
 
 ## Task links (migrations 0003, 0010)
