@@ -1,5 +1,5 @@
 import { api } from "./api.js";
-import { initPage } from "./task-common.js";
+import { initPage } from "./task-common.js?v=2";
 
 const rows = document.getElementById("user-rows");
 const pageError = document.getElementById("error");
