@@ -18,6 +18,8 @@ button { padding: .2rem .6rem; border: 0; border-radius: .25rem; background: #25
 button.secondary { background: #6b7280; }
 table { width: 100%; border-collapse: collapse; margin-top: .25rem; }
 th, td { text-align: left; padding: .2rem .4rem; border-bottom: 1px solid #e5e7eb; }
+tr.priority-high td { background: #fef2f2; }
+tr.priority-high td:nth-child(3) { color: #991b1b; font-weight: 700; }
 .error { color: #b91c1c; }
 .badge { display: inline-block; padding: 0 .4rem; margin-right: .25rem; background: #e5e7eb; border-radius: .25rem; font-size: .8rem; }
 .badge[hidden] { display: none; }

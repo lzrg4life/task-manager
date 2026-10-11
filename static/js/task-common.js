@@ -27,6 +27,7 @@ export function td(text, className) {
 
 export function taskRow(t, extra) {
   const tr = document.createElement("tr");
+  if (t.priority === "high") tr.classList.add("priority-high");
   const link = document.createElement("a");
   link.href = `/task.html?id=${t.id}`;
   link.textContent = t.key;
