@@ -926,4 +926,59 @@ async fn admins_manage_tags_and_users_tag_and_filter_tickets() {
         .0,
         StatusCode::UNAUTHORIZED
     );
+    let (s, archived_tag) = call(
+        &app,
+        "POST",
+        &format!("/api/tags/{backend_id}/archive"),
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::OK);
+    assert_eq!(archived_tag["archived"], true);
+    let (_, active_tags) = call(&app, "GET", "/api/tags", Some(bob), None).await;
+    assert_eq!(active_tags.as_array().unwrap().len(), 1);
+    assert_eq!(active_tags[0]["name"], "Urgent");
+    let (_, all_tags) = call(
+        &app,
+        "GET",
+        "/api/tags?include_archived=true",
+        Some(&admin),
+        None,
+    )
+    .await;
+    assert_eq!(all_tags.as_array().unwrap().len(), 2);
+    let (_, bob_all_tags) = call(
+        &app,
+        "GET",
+        "/api/tags?include_archived=true",
+        Some(bob),
+        None,
+    )
+    .await;
+    assert_eq!(bob_all_tags.as_array().unwrap().len(), 2);
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/2/tags",
+            Some(bob),
+            Some(json!({"tag_id": backend_id})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    let (_, ticket_after_archive) = call(&app, "GET", "/api/tickets/1", Some(bob), None).await;
+    assert_eq!(ticket_after_archive["tags"][0]["name"], "Backend");
+    assert_eq!(ticket_after_archive["tags"][0]["archived"], true);
+    let (s, _) = call(
+        &app,
+        "POST",
+        &format!("/api/tags/{backend_id}/archive"),
+        Some(bob),
+        None,
+    )
+    .await;
+    assert_eq!(s, StatusCode::FORBIDDEN);
 }

@@ -74,14 +74,17 @@ function renderTags(t) {
   const list = document.getElementById("tags");
   const noTags = document.getElementById("no-tags");
   section.hidden = false;
-  noTags.hidden = availableTags.length > 0;
-  list.replaceChildren(...availableTags.map((tag) => {
+  const assignedArchivedTags = t.tags.filter((tag) => tag.archived);
+  const visibleTags = [...availableTags, ...assignedArchivedTags];
+  noTags.hidden = visibleTags.length > 0;
+  list.replaceChildren(...visibleTags.map((tag) => {
     const label = document.createElement("label");
     label.className = "inline";
     label.title = tag.description;
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = t.tags.some((assigned) => assigned.id === tag.id);
+    checkbox.disabled = tag.archived;
     checkbox.addEventListener("change", async () => {
       checkbox.disabled = true;
       try {
@@ -97,7 +100,10 @@ function renderTags(t) {
         show(err.message);
       }
     });
-    label.append(checkbox, document.createTextNode(` ${tag.name}`));
+    label.append(
+      checkbox,
+      document.createTextNode(` ${tag.name}${tag.archived ? " (archived)" : ""}`),
+    );
     return label;
   }));
 }

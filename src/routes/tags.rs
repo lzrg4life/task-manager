@@ -1,4 +1,8 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -18,8 +22,20 @@ pub struct NewTag {
     description: String,
 }
 
-pub async fn list(State(state): State<AppState>, _user: AuthUser) -> AppResult<Json<Vec<TagOut>>> {
-    Ok(Json(models::list_tags(&state.pool).await?))
+#[derive(Deserialize)]
+pub struct TagQuery {
+    include_archived: Option<bool>,
+}
+
+pub async fn list(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Query(query): Query<TagQuery>,
+) -> AppResult<Json<Vec<TagOut>>> {
+    let include_archived = query.include_archived.unwrap_or(false);
+    Ok(Json(
+        models::list_tags(&state.pool, include_archived).await?,
+    ))
 }
 
 pub async fn create(
@@ -64,6 +80,24 @@ pub async fn create(
             id,
             name: name.to_string(),
             description: description.to_string(),
+            archived: false,
         }),
     ))
+}
+
+pub async fn archive(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> AppResult<Json<TagOut>> {
+    user.require_admin()?;
+    let tag = sqlx::query_as::<_, TagOut>(
+        "UPDATE tags SET archived = 1 WHERE id = ? \
+         RETURNING id, name, description, archived",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(Json(tag))
 }

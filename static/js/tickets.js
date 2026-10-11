@@ -151,11 +151,11 @@ async function load() {
       assigneesLoaded = true;
     }
     if (!tagsLoaded) {
-      const tags = await api("/api/tags");
+      const tags = await api("/api/tags?include_archived=true");
       ticketTags.replaceChildren(...tags.map((tag) => {
         const option = document.createElement("option");
         option.value = String(tag.id);
-        option.textContent = tag.name;
+        option.textContent = `${tag.name}${tag.archived ? " (archived)" : ""}`;
         option.title = tag.description;
         return option;
       }));

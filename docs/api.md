@@ -12,8 +12,10 @@ All bodies are JSON; errors are `{"error": "message"}`. Protected routes need `A
 | POST `/api/users` `{email,password,display_name?,is_admin?}` | admin | Create user (201); 409 duplicate email |
 | GET `/api/users/{id}` | admin | One user |
 | PATCH `/api/users/{id}` `{email?,display_name?,password?,is_admin?,is_active?}` | admin | Update; 409 if it would remove the last active admin |
-| GET `/api/tags` | any user | List tags (`id,name,description`) |
+| GET `/api/tags` | any user | List active tags (`id,name,description,archived`) |
+| GET `/api/tags?include_archived=true` | any user | List all tags, including archived tags |
 | POST `/api/tags` `{name,description?}` | admin | Create a tag (201); name is 1-40 characters and unique case-insensitively; description max 500 characters |
+| POST `/api/tags/{id}/archive` | admin | Archive a tag; it remains on tickets already using it but cannot be newly assigned |
 
 Passwords: 10-128 characters. Unknown `/api/*` paths return JSON 404.
 
@@ -32,7 +34,7 @@ All endpoints require any signed-in user. Statuses: `archived, completed, in_rev
 | GET `/api/users/assignable` | Active users (`id,email,display_name`) for assignee pickers |
 | POST `/api/tickets/{id}/links` `{url,label?}` | Link a webpage (201, returns the ticket). `url` must be http(s), max 2000 chars, no whitespace; `label` max 200; max 50 links per ticket. 409 if the URL is already linked or the ticket is archived |
 | DELETE `/api/tickets/{id}/links/{link_id}` | Remove a link (returns the ticket); 404 if not on that ticket; 409 if archived |
-| POST `/api/tickets/{id}/tags` `{tag_id}` | Associate an existing tag (returns the ticket); any signed-in user may add tags, including on archived tickets |
+| POST `/api/tickets/{id}/tags` `{tag_id}` | Associate an active tag (returns the ticket); any signed-in user may add tags, including on archived tickets; 409 if the tag is archived |
 | DELETE `/api/tickets/{id}/tags/{tag_id}` | Remove a tag association (returns the ticket); any signed-in user may remove tags |
 
-Tickets include `tags[]` (`id,name,description`) and `links[]` (`id,url,label,added_by,created_at`). Comma-separated `tag_ids` in list queries filters with AND semantics: a ticket must have every selected tag. Link adds/removals are recorded in `history` with `field` = `link_added` (`new_value` = URL) or `link_removed` (`old_value` = URL, `new_value` null).
+Tickets include `tags[]` (`id,name,description,archived`) and `links[]` (`id,url,label,added_by,created_at`). Archived tags remain in ticket responses and are not removed from existing ticket associations. Comma-separated `tag_ids` in list queries filters with AND semantics: a ticket must have every selected tag. Link adds/removals are recorded in `history` with `field` = `link_added` (`new_value` = URL) or `link_removed` (`old_value` = URL, `new_value` null).

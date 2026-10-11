@@ -11,22 +11,48 @@ const rows = document.getElementById("tag-rows");
 const form = document.getElementById("tag-form");
 const error = document.getElementById("error");
 
+function showError(message) {
+  error.textContent = message;
+  error.hidden = !message;
+}
+
 async function load() {
-  const tags = await api("/api/tags");
+  const tags = await api("/api/tags?include_archived=true");
   rows.replaceChildren(...tags.map((tag) => {
     const row = document.createElement("tr");
     const name = document.createElement("td");
     const description = document.createElement("td");
     name.textContent = tag.name;
     description.textContent = tag.description;
-    row.append(name, description);
+    const status = document.createElement("td");
+    status.textContent = tag.archived ? "Archived" : "Active";
+    const action = document.createElement("td");
+    if (!tag.archived) {
+      const archive = document.createElement("button");
+      archive.type = "button";
+      archive.className = "secondary small";
+      archive.textContent = "Archive";
+      archive.addEventListener("click", async () => {
+        archive.disabled = true;
+        try {
+          await api(`/api/tags/${tag.id}/archive`, { method: "POST" });
+          await load();
+          showError("");
+        } catch (err) {
+          archive.disabled = false;
+          showError(err.message);
+        }
+      });
+      action.append(archive);
+    }
+    row.append(name, description, status, action);
     return row;
   }));
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  error.hidden = true;
+  showError("");
   try {
     await api("/api/tags", {
       method: "POST",
@@ -38,14 +64,12 @@ form.addEventListener("submit", async (event) => {
     form.reset();
     await load();
   } catch (err) {
-    error.textContent = err.message;
-    error.hidden = false;
+    showError(err.message);
   }
 });
 
 try {
   await load();
 } catch (err) {
-  error.textContent = err.message;
-  error.hidden = false;
+  showError(err.message);
 }

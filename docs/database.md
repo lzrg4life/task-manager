@@ -16,6 +16,6 @@ Migration 0004 converts existing `admin` memberships to `is_admin = 1` and remov
 ## Ticket links (migration 0003)
 - `ticket_links` (id, ticket_id, url, label, created_by, created_at; unique on ticket_id+url) – zero or more per ticket; removal deletes the row, and the add/remove is kept in `ticket_history`
 
-## Tags (migration 0005)
-- `tags` (id, name [unique, case-insensitive], description) – created by admins
+## Tags (migrations 0005-0006)
+- `tags` (id, name [unique, case-insensitive], description, archived) – created and archived by admins; archived tags remain associated but are excluded from new assignments
 - `ticket_tags` (ticket_id, tag_id; composite primary key) – zero or more tag associations per ticket; both foreign keys cascade on deletion

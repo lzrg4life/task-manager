@@ -36,7 +36,7 @@ export function ticketRow(t, extra) {
   for (const tag of t.tags || []) {
     const badge = document.createElement("span");
     badge.className = "badge";
-    badge.textContent = tag.name;
+    badge.textContent = `${tag.name}${tag.archived ? " (archived)" : ""}`;
     badge.title = tag.description;
     titleCell.append(" ", badge);
   }

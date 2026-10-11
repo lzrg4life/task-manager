@@ -62,12 +62,12 @@ async function load() {
       if (currentRequest !== requestId) return;
     }
     if (!tagsLoaded) {
-      tagsPromise ??= api("/api/tags")
+      tagsPromise ??= api("/api/tags?include_archived=true")
         .then((tags) => {
           ticketTags.replaceChildren(...tags.map((tag) => {
             const option = document.createElement("option");
             option.value = String(tag.id);
-            option.textContent = tag.name;
+            option.textContent = `${tag.name}${tag.archived ? " (archived)" : ""}`;
             option.title = tag.description;
             return option;
           }));

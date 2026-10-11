@@ -13,11 +13,12 @@ pub struct UserOut {
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, FromRow)]
 pub struct TagOut {
     pub id: i64,
     pub name: String,
     pub description: String,
+    pub archived: bool,
 }
 
 #[derive(FromRow)]
@@ -25,12 +26,15 @@ struct TagRow {
     id: i64,
     name: String,
     description: String,
+    archived: bool,
 }
 
-pub async fn list_tags(pool: &SqlitePool) -> AppResult<Vec<TagOut>> {
+pub async fn list_tags(pool: &SqlitePool, include_archived: bool) -> AppResult<Vec<TagOut>> {
     Ok(sqlx::query_as::<_, TagRow>(
-        "SELECT id, name, description FROM tags ORDER BY name COLLATE NOCASE, id",
+        "SELECT id, name, description, archived FROM tags \
+         WHERE archived = 0 OR ? ORDER BY name COLLATE NOCASE, id",
     )
+    .bind(include_archived)
     .fetch_all(pool)
     .await?
     .into_iter()
@@ -38,6 +42,7 @@ pub async fn list_tags(pool: &SqlitePool) -> AppResult<Vec<TagOut>> {
         id: row.id,
         name: row.name,
         description: row.description,
+        archived: row.archived,
     })
     .collect())
 }

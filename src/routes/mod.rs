@@ -20,6 +20,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/users/{id}", get(users::get_one).patch(users::update))
         .route("/users/assignable", get(tickets::assignable_users))
         .route("/tags", get(tags::list).post(tags::create))
+        .route("/tags/{id}/archive", post(tags::archive))
         .route("/tickets", get(tickets::list).post(tickets::create))
         .route("/tickets/archived", get(tickets::list_archived))
         .route("/tickets/removed", get(tickets::list_removed))

@@ -193,6 +193,7 @@ struct TicketTagRow {
     id: i64,
     name: String,
     description: String,
+    archived: bool,
 }
 
 const SELECT_TICKET: &str = "SELECT t.id, t.title, t.details, t.business_requirements, \
@@ -243,7 +244,7 @@ async fn load_ticket_tags(
     }
     let placeholders = vec!["?"; ticket_ids.len()].join(", ");
     let sql = format!(
-        "SELECT tt.ticket_id, t.id, t.name, t.description FROM ticket_tags tt \
+        "SELECT tt.ticket_id, t.id, t.name, t.description, t.archived FROM ticket_tags tt \
          JOIN tags t ON t.id = tt.tag_id WHERE tt.ticket_id IN ({placeholders}) \
          ORDER BY t.name COLLATE NOCASE, t.id"
     );
@@ -259,6 +260,7 @@ async fn load_ticket_tags(
                 id: row.id,
                 name: row.name,
                 description: row.description,
+                archived: row.archived,
             });
     }
     Ok(tags_by_ticket)
@@ -930,12 +932,18 @@ pub async fn add_tag(
     Json(req): Json<AddTag>,
 ) -> AppResult<Json<TicketOut>> {
     fetch_row(&state.pool, id).await?;
-    let tag_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM tags WHERE id = ?)")
+    let tag_archived: Option<bool> = sqlx::query_scalar("SELECT archived FROM tags WHERE id = ?")
         .bind(req.tag_id)
-        .fetch_one(&state.pool)
+        .fetch_optional(&state.pool)
         .await?;
-    if !tag_exists {
-        return Err(AppError::NotFound);
+    match tag_archived {
+        None => return Err(AppError::NotFound),
+        Some(true) => {
+            return Err(AppError::Conflict(
+                "archived tags cannot be assigned to tickets".into(),
+            ));
+        }
+        Some(false) => {}
     }
     let mut tx = state.pool.begin().await?;
     let inserted = sqlx::query(
