@@ -139,6 +139,7 @@ pub struct TicketOut {
     created_at: String,
     updated_at: String,
     links: Vec<LinkOut>,
+    related_tickets: Vec<TicketSummary>,
     history: Vec<HistoryEntry>,
 }
 
@@ -322,6 +323,18 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
         created_at: l.created_at,
     })
     .collect();
+    let related_rows = sqlx::query_as::<_, TicketRow>(&format!(
+        "{SELECT_TICKET} WHERE t.id IN ( \
+            SELECT CASE WHEN ticket_id = ? THEN related_ticket_id ELSE ticket_id END \
+            FROM ticket_relations WHERE ticket_id = ? OR related_ticket_id = ? \
+         ) ORDER BY t.id"
+    ))
+    .bind(id)
+    .bind(id)
+    .bind(id)
+    .fetch_all(pool)
+    .await?;
+    let related_tickets = summaries_of(pool, related_rows).await?;
     Ok(TicketOut {
         summary: summary_of(&r, tags)?,
         details: r.details,
@@ -332,6 +345,7 @@ async fn fetch_ticket(pool: &SqlitePool, id: i64) -> AppResult<TicketOut> {
         created_at: r.created_at,
         updated_at: r.updated_at,
         links,
+        related_tickets,
         history,
     })
 }
@@ -486,6 +500,33 @@ pub async fn get_one(
     Path(id): Path<i64>,
 ) -> AppResult<Json<TicketOut>> {
     Ok(Json(fetch_ticket(&state.pool, id).await?))
+}
+
+#[derive(Deserialize)]
+pub struct TicketSearchQuery {
+    q: String,
+}
+
+pub async fn search(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Query(q): Query<TicketSearchQuery>,
+) -> AppResult<Json<Vec<TicketSummary>>> {
+    let q = q.q.trim();
+    if q.is_empty() || q.chars().count() > 200 {
+        return Err(AppError::BadRequest("q must be 1-200 characters".into()));
+    }
+    let rows = sqlx::query_as::<_, TicketRow>(&format!(
+        "{SELECT_TICKET} WHERE t.status != 'archived' \
+         AND (instr(lower('TM-' || t.id), lower(?)) > 0 \
+              OR instr(lower(t.title), lower(?)) > 0) \
+         ORDER BY t.id DESC LIMIT 20"
+    ))
+    .bind(q)
+    .bind(q)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(summaries_of(&state.pool, rows).await?))
 }
 
 fn double_option<'de, D, T>(d: D) -> Result<Option<Option<T>>, D::Error>
@@ -916,6 +957,92 @@ pub async fn remove_link(
             .ok_or(AppError::NotFound)?;
     record_history(&mut tx, id, "link_removed", Some(&url), None, user.id).await?;
     touch(&mut tx, id).await?;
+    tx.commit().await?;
+    Ok(Json(fetch_ticket(&state.pool, id).await?))
+}
+
+#[derive(Deserialize)]
+pub struct AddRelatedTicket {
+    related_ticket_id: i64,
+}
+
+async fn ensure_relation_editable(pool: &SqlitePool, id: i64, related_id: i64) -> AppResult<()> {
+    if id == related_id {
+        return Err(AppError::BadRequest(
+            "a ticket cannot be related to itself".into(),
+        ));
+    }
+    ensure_editable(pool, id).await?;
+    ensure_editable(pool, related_id).await?;
+    Ok(())
+}
+
+fn relation_ids(id: i64, related_id: i64) -> (i64, i64) {
+    if id < related_id {
+        (id, related_id)
+    } else {
+        (related_id, id)
+    }
+}
+
+pub async fn add_related_ticket(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Json(req): Json<AddRelatedTicket>,
+) -> AppResult<(StatusCode, Json<TicketOut>)> {
+    if req.related_ticket_id < 1 {
+        return Err(AppError::BadRequest(
+            "related_ticket_id must be a positive ticket ID".into(),
+        ));
+    }
+    ensure_relation_editable(&state.pool, id, req.related_ticket_id).await?;
+    let (ticket_id, related_ticket_id) = relation_ids(id, req.related_ticket_id);
+    let mut tx = state.pool.begin().await?;
+    let inserted = sqlx::query(
+        "INSERT INTO ticket_relations (ticket_id, related_ticket_id, created_by) \
+         VALUES (?, ?, ?) ON CONFLICT(ticket_id, related_ticket_id) DO NOTHING",
+    )
+    .bind(ticket_id)
+    .bind(related_ticket_id)
+    .bind(user.id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if inserted == 0 {
+        return Err(AppError::Conflict(
+            "these tickets are already related".into(),
+        ));
+    }
+    touch(&mut tx, ticket_id).await?;
+    touch(&mut tx, related_ticket_id).await?;
+    tx.commit().await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(fetch_ticket(&state.pool, id).await?),
+    ))
+}
+
+pub async fn remove_related_ticket(
+    State(state): State<AppState>,
+    _user: AuthUser,
+    Path((id, related_id)): Path<(i64, i64)>,
+) -> AppResult<Json<TicketOut>> {
+    ensure_relation_editable(&state.pool, id, related_id).await?;
+    let (ticket_id, related_ticket_id) = relation_ids(id, related_id);
+    let mut tx = state.pool.begin().await?;
+    let removed =
+        sqlx::query("DELETE FROM ticket_relations WHERE ticket_id = ? AND related_ticket_id = ?")
+            .bind(ticket_id)
+            .bind(related_ticket_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    if removed == 0 {
+        return Err(AppError::NotFound);
+    }
+    touch(&mut tx, ticket_id).await?;
+    touch(&mut tx, related_ticket_id).await?;
     tx.commit().await?;
     Ok(Json(fetch_ticket(&state.pool, id).await?))
 }

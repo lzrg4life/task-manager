@@ -695,6 +695,172 @@ async fn ticket_links_add_remove_and_history() {
 }
 
 #[tokio::test]
+async fn users_can_search_relate_and_unrelate_tickets() {
+    let app = setup().await;
+    let admin = admin_token(&app).await;
+    for title in ["First ticket", "Second ticket", "Archived ticket"] {
+        let (status, _) = call(
+            &app,
+            "POST",
+            "/api/tickets",
+            Some(&admin),
+            Some(json!({"title": title})),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+    }
+
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/users",
+        Some(&admin),
+        Some(json!({
+            "email": "bob@example.com",
+            "password": "bobs-long-password",
+            "display_name": "Bob"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, bob) = login(&app, "bob@example.com", "bobs-long-password").await;
+    let bob_token = bob["access_token"].as_str().unwrap();
+
+    let (status, matches) = call(
+        &app,
+        "GET",
+        "/api/tickets/search?q=second",
+        Some(bob_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(matches[0]["key"], "TM-2");
+    assert_eq!(
+        call(&app, "GET", "/api/tickets/search?q=x", None, None)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+
+    let (status, first) = call(
+        &app,
+        "POST",
+        "/api/tickets/1/related",
+        Some(bob_token),
+        Some(json!({"related_ticket_id": 2})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(first["related_tickets"][0]["key"], "TM-2");
+    let (status, second) = call(&app, "GET", "/api/tickets/2", Some(bob_token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(second["related_tickets"][0]["key"], "TM-1");
+
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/2/related",
+            Some(bob_token),
+            Some(json!({"related_ticket_id": 1})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/1/related",
+            Some(bob_token),
+            Some(json!({"related_ticket_id": 1})),
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/1/related",
+            Some(bob_token),
+            Some(json!({"related_ticket_id": 999})),
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            "/api/tickets/2/related/1",
+            Some(bob_token),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    let (_, first) = call(&app, "GET", "/api/tickets/1", Some(bob_token), None).await;
+    let (_, second) = call(&app, "GET", "/api/tickets/2", Some(bob_token), None).await;
+    assert!(first["related_tickets"].as_array().unwrap().is_empty());
+    assert!(second["related_tickets"].as_array().unwrap().is_empty());
+
+    call(
+        &app,
+        "POST",
+        "/api/tickets/1/related",
+        Some(bob_token),
+        Some(json!({"related_ticket_id": 2})),
+    )
+    .await;
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/2",
+        Some(&admin),
+        Some(json!({"status": "archived"})),
+    )
+    .await;
+    assert_eq!(
+        call(
+            &app,
+            "DELETE",
+            "/api/tickets/1/related/2",
+            Some(bob_token),
+            None,
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+    call(
+        &app,
+        "PATCH",
+        "/api/tickets/3",
+        Some(&admin),
+        Some(json!({"status": "archived"})),
+    )
+    .await;
+    assert_eq!(
+        call(
+            &app,
+            "POST",
+            "/api/tickets/1/related",
+            Some(bob_token),
+            Some(json!({"related_ticket_id": 3})),
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+}
+
+#[tokio::test]
 async fn admins_manage_tags_and_users_tag_and_filter_tickets() {
     let app = setup().await;
     let admin = admin_token(&app).await;

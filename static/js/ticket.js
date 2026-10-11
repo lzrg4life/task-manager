@@ -36,6 +36,85 @@ function ensureUserOption(select, u) {
 
 const FIELD_LABELS = { link_added: "Link added", link_removed: "Link removed" };
 const linkForm = document.getElementById("link-form");
+const relatedSearchForm = document.getElementById("related-search-form");
+
+function renderRelatedTickets(t) {
+  const section = document.getElementById("related-section");
+  const list = document.getElementById("related-tickets");
+  const noRelated = document.getElementById("no-related-tickets");
+  const searchResults = document.getElementById("related-search-results");
+  const archived = t.status === "archived";
+  section.hidden = false;
+  noRelated.hidden = t.related_tickets.length > 0;
+  relatedSearchForm.hidden = archived;
+  list.replaceChildren(...t.related_tickets.map((related) => {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = `/ticket.html?id=${encodeURIComponent(related.id)}`;
+    a.textContent = `${related.key}: ${related.title}`;
+    li.append(a, ` (${STATUS_LABELS[related.status]})`);
+    if (!archived && related.status !== "archived") {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "secondary small";
+      btn.textContent = "Remove";
+      btn.addEventListener("click", async () => {
+        try {
+          render(await api(
+            `/api/tickets/${encodeURIComponent(id)}/related/${related.id}`,
+            { method: "DELETE" },
+          ));
+          show("");
+        } catch (err) { show(err.message); }
+      });
+      li.append(" ", btn);
+    }
+    return li;
+  }));
+  const relatedIds = new Set(t.related_tickets.map((related) => related.id));
+  searchResults.replaceChildren(...[...searchResults.children].filter((item) => {
+    return !relatedIds.has(Number(item.dataset.ticketId));
+  }));
+}
+
+relatedSearchForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const results = document.getElementById("related-search-results");
+  try {
+    const query = relatedSearchForm.elements.query.value.trim();
+    const matches = await api(`/api/tickets/search?q=${encodeURIComponent(query)}`);
+    const current = await api(`/api/tickets/${encodeURIComponent(id)}`);
+    const alreadyRelated = new Set(current.related_tickets.map((related) => related.id));
+    results.replaceChildren(...matches
+      .filter((match) => match.id !== Number(id) && !alreadyRelated.has(match.id))
+      .map((match) => {
+        const li = document.createElement("li");
+        li.dataset.ticketId = String(match.id);
+        const a = document.createElement("a");
+        a.href = `/ticket.html?id=${encodeURIComponent(match.id)}`;
+        a.textContent = `${match.key}: ${match.title}`;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "Link";
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          try {
+            render(await api(`/api/tickets/${encodeURIComponent(id)}/related`, {
+              method: "POST",
+              body: { related_ticket_id: match.id },
+            }));
+            show("");
+          } catch (err) {
+            btn.disabled = false;
+            show(err.message);
+          }
+        });
+        li.append(a, " ", btn);
+        return li;
+      }));
+    show("");
+  } catch (err) { show(err.message); }
+});
 
 function renderLinks(t) {
   const archived = t.status === "archived";
@@ -136,6 +215,7 @@ function render(t) {
   document.getElementById("meta").textContent =
     `Created by ${t.created_by.name} on ${t.created_at}. Last updated ${t.updated_at}.`;
   renderLinks(t);
+  renderRelatedTickets(t);
   renderTags(t);
   document.getElementById("history-section").hidden = false;
   document.getElementById("history").replaceChildren(...t.history.map((h) => {

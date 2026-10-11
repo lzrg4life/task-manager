@@ -44,6 +44,16 @@
         <button type="submit">Add link</button>
       </form>
     </section>
+    <section id="related-section" class="list" hidden>
+      <h2>Related tickets</h2>
+      <ul id="related-tickets" class="links"></ul>
+      <p id="no-related-tickets">No related tickets.</p>
+      <form id="related-search-form" class="link-form">
+        <input type="text" name="query" placeholder="Search by ticket key or title" maxlength="200" required>
+        <button type="submit">Search</button>
+      </form>
+      <ul id="related-search-results" class="links" aria-live="polite"></ul>
+    </section>
     <section id="history-section" class="list" hidden>
       <h2>History</h2>
       <table><thead><tr><th>When</th><th>Field</th><th>From</th><th>To</th><th>By</th></tr></thead><tbody id="history"></tbody></table>

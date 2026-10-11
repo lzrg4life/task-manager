@@ -22,6 +22,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/tags", get(tags::list).post(tags::create))
         .route("/tags/{id}/archive", post(tags::archive))
         .route("/tickets", get(tickets::list).post(tickets::create))
+        .route("/tickets/search", get(tickets::search))
         .route("/tickets/archived", get(tickets::list_archived))
         .route("/tickets/removed", get(tickets::list_removed))
         .route(
@@ -33,6 +34,11 @@ pub fn api_router() -> Router<AppState> {
         .route(
             "/tickets/{id}/links/{link_id}",
             delete(tickets::remove_link),
+        )
+        .route("/tickets/{id}/related", post(tickets::add_related_ticket))
+        .route(
+            "/tickets/{id}/related/{related_id}",
+            delete(tickets::remove_related_ticket),
         )
         .route("/tickets/{id}/tags", post(tickets::add_tag))
         .route("/tickets/{id}/tags/{tag_id}", delete(tickets::remove_tag))
