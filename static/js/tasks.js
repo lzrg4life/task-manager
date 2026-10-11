@@ -16,6 +16,7 @@ let taskToArchive = null;
 let taskLists = [];
 let assigneesLoaded = false;
 let tagsLoaded = false;
+const expandedLists = new Map();
 async function move(id, direction) {
   try {
     await api(`/api/tasks/${id}/move`, { method: "POST", body: { direction } });
@@ -96,8 +97,7 @@ function renderBoard() {
     const header = document.createElement("button");
     header.type = "button";
     header.className = "title-bar list-toggle";
-    const collapsedByDefault = list.status !== "active";
-    header.setAttribute("aria-expanded", String(!collapsedByDefault));
+    const expanded = expandedLists.get(list.status) ?? list.status === "active";
     const h = document.createElement("h2");
     h.textContent = `${STATUS_LABELS[list.status]} (${tasks.length})`;
     const body = document.createElement("div");
@@ -105,11 +105,12 @@ function renderBoard() {
     const setCollapsed = (collapsed) => {
       body.hidden = collapsed;
       header.setAttribute("aria-expanded", String(!collapsed));
+      expandedLists.set(list.status, !collapsed);
     };
     header.addEventListener("click", () => setCollapsed(!body.hidden));
     header.append(h);
     section.append(header);
-    setCollapsed(collapsedByDefault);
+    setCollapsed(!expanded);
     if (tasks.length === 0) {
       const p = document.createElement("p");
       p.textContent = "No tasks.";
